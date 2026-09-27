@@ -15,7 +15,7 @@
   - 智能体技能资产（`skills/`）：
     - `skills/project-knowledge-maintainer`：配套知识维护智能体技能规范与参考模板。
     - `skills/knowledge-maintenance-orchestrator`：知识维护总控编排技能，负责分支同步、差异扫描、子智能体调度与全流程闭环推进。
-    - `skills/knowledge-contributor`：面向开发者与运营人员的工程知识贡献智能体技能，负责查重预审、结构化候选生成与待审池安全投递。
+    - `skills/knowledge-contributor`：面向开发者与运营人员的工程知识贡献智能体技能，担当知识库防污染守门人，负责合理性拦截、查重预审、结构化候选生成与显式确认投递。
 - **常用验证与构建命令**：
   - 执行子包单元测试：进入对应子包目录执行 `npm test`。
   - 执行类型检查：进入对应子包目录执行 `npm run typecheck`。
