@@ -39,24 +39,145 @@ flowchart TD
 
 ---
 
-## 排障经验待审池治理实战
+## Knowledge Inbox 待审池治理实战
 
-在企业日常运维与排障中，一线研发排障后沉淀的经验极其宝贵，但若允许随意修改正式文档，极易引发格式冲突与推测污染。系统遵循「**缓冲入池，去重转正**」的原则，提供受控的待审流转机制：
+Knowledge Inbox 是所有人工知识进入正式知识库前的统一受控写入口。无论是线上生产排障所验证的高价值经验，还是日常人工对系统流程的补充修正，均统一经由待审池缓冲流转，杜绝未经求证的信息直接污染权威知识。
 
-### 经验结构化采集入池
+系统将人工知识贡献划分为两类核心模式：
 
-一线研发或运维人员在只读查询视图（`sk`）下，通过标准化命令将排障记录结构化提交至待审池：
+- 生产排障经验（`troubleshooting`）：收集生产故障处置、日志排障与客诉处理过程中发现的深层技术事实与应对手段；
+- 日常维护补充（`maintenance`）：涵盖系统主流程补全、单仓知识修正、业务规则扩充、接口契约更新以及依据设计文档录入新知识。
+
+### 结构化 Candidate Markdown 规范
+
+Knowledge Inbox 采用 Markdown 格式持久化于待审池中，核心规范定义为：
+
+> **YAML Frontmatter + 固定语义标记节（Semantic Sections）**
+
+系统为两类输入分别规定了标准语义标记节。
+
+#### 生产排障候选模板（troubleshooting）
+
+```markdown
+---
+schema_version: 1
+title: budget limit 导致的营销活动过滤
+domain: marketing
+contribution_type: troubleshooting
+knowledge_type: runbook
+tags:
+  - budget-limit
+---
+
+<!-- section:context -->
+## 问题背景与现象
+
+<!-- section:evidence -->
+## 证据链
+
+<!-- section:findings -->
+## 已验证结论
+
+<!-- section:candidates -->
+## 建议沉淀的知识
+
+<!-- section:unknowns -->
+## 未确认事项
+
+<!-- section:maintainer -->
+## Maintainer 处理记录
+```
+
+#### 日常维护候选模板（maintenance）
+
+```markdown
+---
+schema_version: 1
+title: 实名认证绑卡端到端主流程补充
+domain: certification
+contribution_type: maintenance
+knowledge_type: flow
+tags:
+  - 实名认证
+---
+
+<!-- section:context -->
+## 维护背景
+
+<!-- section:content -->
+## 建议内容
+
+<!-- section:evidence -->
+## 依据
+
+<!-- section:target -->
+## 建议归属
+
+<!-- section:unknowns -->
+## 未确认事项
+
+<!-- section:maintainer -->
+## Maintainer 处理记录
+```
+
+#### 语义标记节核心约束
+
+- 语义结构与表现形式解耦：模板只约束语义分节的注释标记（`<!-- section:xxx -->`），绝不限制具体正文写法。正文中可自由采用自然语言、无序列表、表格、代码片段或时序图；
+- 自动化程序无缝解析：后端与智能体切片解析时仅依赖注释标签，不依赖具体的中文标题内容。
+
+### 候选文档设计三原则
+
+为了保障沉淀知识的客观性与工程质量，编写与提炼候选文档必须恪守三大原则：
+
+- 保存事实不保存思维链：排障类候选仅保留故障现象、排查步骤、关键日志证据、已验证事实与待确认未知项，剔除主观猜测与无效的排查弯路；
+- 未确认事项必须保留：允许且要求明确记录尚未验证的技术点、缺乏对端源码的推断或未完全复现的边缘场景，严禁为了保证文档形式完整而主观臆造；
+- 待审池与正式知识库明确定位：待审池保存具体案例、偶发日志、关联订单与临时证据，正式知识库仅保存长期稳定的架构规则、通用流程、标准接口与排障手册。
+
+### 经验结构化投递入池
+
+一线研发人员或排障助手在只读查询视图（`sk`）下，即可调用收集动作投递候选文档：
 
 ```bash
 ad run knowledge/knowledge.collect --profile sk -- \
-  title="支付网关网络抖动超时排障记录" \
-  tags.0="payment" tags.1="timeout" \
-  content="当支付网关返回网络抖动时，回调接口需校验幂等号并开启指数退避重试，避免重试并发打垮下游服务..."
+  filename="marketing-budget-limit" \
+  content="---
+schema_version: 1
+title: budget limit 导致的营销活动过滤
+domain: marketing
+contribution_type: troubleshooting
+knowledge_type: runbook
+tags:
+  - budget-limit
+---
+
+<!-- section:context -->
+## 问题背景与现象
+营销活动计算过程中用户无法参与抽奖活动。
+
+<!-- section:evidence -->
+## 证据链
+日志包含错误码 ACT_BUDGET_LMT，关联配置表 budget_threshold 为 0。
+
+<!-- section:findings -->
+## 已验证结论
+当预算阈值触发时过滤用户活动资格。
+
+<!-- section:candidates -->
+## 建议沉淀的知识
+在营销活动排障手册补充 ACT_BUDGET_LMT 处理步骤。
+
+<!-- section:unknowns -->
+## 未确认事项
+未知是否所有子渠道均共享同一阈值。
+
+<!-- section:maintainer -->
+## Maintainer 处理记录
+"
 ```
 
-提交内容作为独立的 Markdown 候选文件保存在宿主机持久化待审池目录中。该目录与正式工作区物理隔离，且不对外开放通用检索，彻底杜绝未经审核的主观信息干扰正常代码与知识检索。
+提交内容作为独立的 Markdown 候选文件保存在持久化待审池目录中，系统自动补充服务端审计元数据（`id`、`created_at`、`status`）。
 
-### 待审经验扫描
+### 待审经验扫描与维护智能体消费
 
 维护智能体在巡检时通过特权维护视图（`skm`）拉取待审经验清单：
 
@@ -64,36 +185,28 @@ ad run knowledge/knowledge.collect --profile sk -- \
 ad run knowledge/knowledge.list --profile skm -- status="pending"
 ```
 
-该动作返回待审池中所有状态为 `pending` 的候选经验条目，包含文档编号、标题、提交时间与标签元数据。
+消费待审池时，维护智能体必须严格遵循核心消费准则：
 
-### 源码比对核验
+> **候选文档是贡献单元，不是正式知识存储单元。**
 
-维护智能体查阅纳管代码仓源码，交叉核实排障场景与应对措施的技术准确性：
-- 确认该问题是特定版本缺陷还是全局架构约束；
-- 核验最新主干分支源码是否已经通过代码重构彻底修复该隐患；
-- 确认相关配置项与超时阈值在当前代码中的实际定义。
+严禁机械式地一文一建。维护智能体必须结合纳管代码仓的源码进行交叉核验：
 
-### 规范提炼入库
-
-将核验属实的有效经验提炼为标准知识单元，合入对应的规范目录中：
-- 应急处置流程合入 `runbook/` 操作手册目录；
-- 幂等与重试约束合入 `rule/` 业务规则目录；
-- 回调与状态定义合入 `interface/` 接口契约目录。
-
-严禁在工作区非受控创建孤岛碎片文件，确保所有沉淀知识融入统一体系。
-
-### 决议归档留痕
-
-提炼合并完成后，调用归档动作记录决策并移出待审池，形成完整的审计留痕：
+- 查验源码事实：核实候选文档中记录的类名、枚举值、配置项与时序是否与主干源码一致；
+- 提炼合入规范目录：核验无误后，将事实提炼归纳并合入正式知识库既有的规范文件（如将处理流程合入 `runbook/`，将规则合入 `rule/`，将主时序合入 `flow/`）；
+- 决议归档留痕：合入完成后，调用归档动作记录决策并移出待审池：
 
 ```bash
 ad run knowledge/knowledge.archive --profile skm -- \
   id="20260927-a1b2c3d4" \
   resolution="accepted" \
-  note="已提炼并合入 order-service 的 runbook-payment.md 操作手册中"
+  note="已提炼并合入 marketing-service 的 runbook-activity.md 操作手册中"
 ```
 
-若核验发现属于已修复代码或环境误报，则在归档时指定 `resolution="rejected"` 并注明驳回原因，确保全生命周期留痕可溯。
+归档决议状态包括：
+- `accepted`：事实核验属实且填补知识缺口，已提炼合入正式库；
+- `duplicate`：记录内容在现有知识库中已有完整准确说明；
+- `insufficient_evidence`：关键证据不足或缺少对端源码支撑，暂不入库；
+- `rejected`：经核实与主干源码事实相悖或属于已废弃遗留问题。
 
 ---
 
@@ -101,7 +214,7 @@ ad run knowledge/knowledge.archive --profile skm -- \
 
 ### 增量扫描基准原理
 
-检查点机制的核心职能是记录「已核验代码提交哈希」作为基线水位。调度器在后续执行巡检时，仅扫描检查点哈希至分支最新提交之间的增量区间，避免全量重复扫描。
+检查点机制的核心职能是在持久化数据库（`global.db`）中记录各代码仓当前「已核验代码提交哈希」作为基线水位。调度器在后续执行巡检时，仅扫描检查点哈希至分支最新提交之间的增量区间，避免全量重复扫描。
 
 ### 无文档变更时推进检查点的技术必要性
 
