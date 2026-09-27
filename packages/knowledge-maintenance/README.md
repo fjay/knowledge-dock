@@ -64,7 +64,6 @@
   - **参数**：`path`（仓库路径）、`files`（可选，仅提交指定文件清单，缺省提交全部变更）、`message`（提交信息，缺省 `docs: update knowledge documentation`）、`branch`（可选，目标分支）、`push`（可选，是否推送远端，默认 true）。
   - 确保位于目标分支后执行 `git add` 与 `git commit`，并按需推送至远端。
   - 返回 `{ status, path, repo, branch, committed, pushed, commit, files, message }`。
-
 ---
 
 ## 编排执行与定时调度

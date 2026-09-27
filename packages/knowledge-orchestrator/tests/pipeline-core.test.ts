@@ -11,6 +11,8 @@ import {
   renderProgressBar,
   renderDashboard,
   buildPrompt,
+  buildCodeRepoPrompt,
+  buildSystemKnowledgePrompt,
   buildPlaceholders,
   renderTemplate,
   isRepoCompleted,
@@ -18,7 +20,7 @@ import {
   runPipeline,
   type DryRunResult,
   type PipelineSummary,
-} from "../../../bin/pipeline-runner.mjs";
+} from "../src/pipeline-core.ts";
 
 test("Pipeline Runner - 命令行参数解析", async (t) => {
   await t.test("解析默认参数", () => {
@@ -29,8 +31,14 @@ test("Pipeline Runner - 命令行参数解析", async (t) => {
     assert.equal(opts.interval, 10);
     assert.equal(opts.dryRun, false);
     assert.equal(opts.only, null);
+    assert.equal(opts.skipSystemKnowledge, false);
     assert.equal(opts.reportFile, "maintenance-report.md");
     assert.equal(opts.help, false);
+  });
+
+  await t.test("解析 --skip-system-knowledge 参数", () => {
+    const opts = parseArgs(["--skip-system-knowledge"]);
+    assert.equal(opts.skipSystemKnowledge, true);
   });
 
   await t.test("解析指定参数（空格分隔）", () => {
@@ -48,6 +56,8 @@ test("Pipeline Runner - 命令行参数解析", async (t) => {
       "order-service,payment-service",
       "--report-file",
       "custom-report.md",
+      "--log-file",
+      "/var/log/custom-pipeline.log",
     ];
     const opts = parseArgs(argv);
     assert.equal(opts.profile, "custom-profile");
@@ -57,6 +67,7 @@ test("Pipeline Runner - 命令行参数解析", async (t) => {
     assert.equal(opts.dryRun, true);
     assert.equal(opts.only, "order-service,payment-service");
     assert.equal(opts.reportFile, "custom-report.md");
+    assert.equal(opts.logFile, "/var/log/custom-pipeline.log");
   });
 
   await t.test("解析指定参数（等号分隔）", () => {
@@ -67,6 +78,7 @@ test("Pipeline Runner - 命令行参数解析", async (t) => {
       "--interval=15",
       "--only=cron-service",
       "--report-file=out.md",
+      "--log-file=/tmp/run.log",
       "-h",
     ];
     const opts = parseArgs(argv);
@@ -76,6 +88,7 @@ test("Pipeline Runner - 命令行参数解析", async (t) => {
     assert.equal(opts.interval, 15);
     assert.equal(opts.only, "cron-service");
     assert.equal(opts.reportFile, "out.md");
+    assert.equal(opts.logFile, "/tmp/run.log");
     assert.equal(opts.help, true);
   });
 });
@@ -330,6 +343,124 @@ test("Pipeline Runner - 内置单仓维护提示词生成 (buildPrompt)", async 
   });
 });
 
+test("Pipeline Runner - 系统知识库全局维护提示词生成 (buildSystemKnowledgePrompt)", async (t) => {
+  const sysPromptData = {
+    repo: "system-knowledge",
+    path: "/srv/workspace/system-knowledge",
+    branch: "master",
+    repoType: "system_knowledge" as const,
+    from: "1111111111111111111111111111111111111111",
+    to: "2222222222222222222222222222222222222222",
+    commitCount: 1,
+    changedFilesCount: 2,
+    commitsSummary: "2222222 docs(system): sync payment domain flow",
+    diffSummary: "2 files changed, 10 insertions(+)",
+    codePhaseSummary: "前序已完成巡检且发生更新的代码仓（共 1 个）：\n- order-service：已推进检查点至 2222222",
+  };
+
+  const prompt = buildSystemKnowledgePrompt(sysPromptData);
+
+  await t.test("验证任务背景包含系统知识仓、路径、分支与前序代码仓巡检摘要", () => {
+    assert.ok(prompt.includes("系统知识库全局聚合维护指导"));
+    assert.ok(prompt.includes("system-knowledge"));
+    assert.ok(prompt.includes("/srv/workspace/system-knowledge"));
+    assert.ok(prompt.includes("master"));
+    assert.ok(prompt.includes("前序代码仓巡检摘要"));
+    assert.ok(prompt.includes("order-service：已推进检查点至 2222222"));
+    assert.ok(prompt.includes("2222222 docs(system): sync payment domain flow"));
+  });
+
+  await t.test("验证包含系统知识库目录规范与六大分类落盘要求", () => {
+    assert.ok(prompt.includes("index.md：系统总索引（业务领域清单 + 代码仓归属对照表）"));
+    assert.ok(prompt.includes("db-map.md：全局数据库与业务领域映射表"));
+    assert.ok(prompt.includes("ddl/：生产数据库结构快照"));
+    assert.ok(prompt.includes("统一六大类别目录：每个业务领域内部必须具备全部六大分类单数目录"));
+    assert.ok(prompt.includes("<category>-<topic>.md"));
+  });
+
+  await t.test("验证包含新业务领域识别与目录初始化三步法", () => {
+    assert.ok(prompt.includes("业务领域识别与目录初始化三步法"));
+    assert.ok(prompt.includes("调阅根目录 index.md，获取已登记的业务领域清单与代码仓归属对照表"));
+    assert.ok(prompt.includes("扫描工作区（/srv/workspace/*）中所有已纳管代码仓"));
+    assert.ok(prompt.includes("开辟全新领域"));
+    assert.ok(prompt.includes("一次建齐全部六大分类目录"));
+  });
+
+  await t.test("验证包含存量系统知识库有效性与更新判定门禁（失效判定）", () => {
+    assert.ok(prompt.includes("存量系统知识库有效性与更新判定门禁（失效判定）"));
+    assert.ok(prompt.includes("行为层：跨仓端到端主流程"));
+    assert.ok(prompt.includes("契约层：对外 HTTP/RPC 接口、MQ 消息事件"));
+    assert.ok(prompt.includes("数据层：是否有数据库表结构变动"));
+    assert.ok(prompt.includes("no_change_needed"));
+  });
+
+  await t.test("验证包含特权工具、断链自检门禁与 master 分支发布推进", () => {
+    assert.ok(prompt.includes("ad run workspace/links.verify --profile skm"));
+    assert.ok(prompt.includes("ad run maintenance/maintenance.publish --profile skm -- path=\"/srv/workspace/system-knowledge\" repoType=\"system_knowledge\""));
+    assert.ok(prompt.includes("ad run maintenance/maintenance.complete --profile skm -- path=\"/srv/workspace/system-knowledge\""));
+  });
+
+  await t.test("验证包含多子代理协同架构与主智能体统筹定位", () => {
+    assert.ok(prompt.includes("主智能体角色定位：作为系统层知识维护总控中枢，主智能体负责统筹决策、方案讨论、子代理调度委派与最终门禁验收，绝不亲自盲目编辑文件"));
+    assert.ok(prompt.includes("跨仓契约与领域影响分析子代理"));
+    assert.ok(prompt.includes("新领域初始化子代理"));
+    assert.ok(prompt.includes("跨仓主流程子代理"));
+    assert.ok(prompt.includes("接口与数据模型子代理"));
+    assert.ok(prompt.includes("references/system-knowledge-workflow.md"));
+  });
+
+  await t.test("验证包含自动化调查依据提取与三路决策树判定", () => {
+    assert.ok(prompt.includes("自动化事实证据提取：委派跨仓契约与领域影响分析子代理，横向扫描工作区兄弟仓（/srv/workspace/*）提取证据，杜绝凭空臆测"));
+    assert.ok(prompt.includes("Controller、路由定义、RPC 契约与对外暴露服务"));
+    assert.ok(prompt.includes("MQ 主题生产者与消费者、消息载荷与队列绑定"));
+    assert.ok(prompt.includes("Flyway 迁移脚本、DDL 变更与持久化实体模型"));
+    assert.ok(prompt.includes("路径一（无需更新）"));
+    assert.ok(prompt.includes("路径二（更新已有领域）"));
+    assert.ok(prompt.includes("路径三（开辟新领域）"));
+  });
+
+  await t.test("验证包含人机方案讨论门禁与先议后行铁律", () => {
+    assert.ok(prompt.includes("人机方案讨论门禁（先议后行铁律）"));
+    assert.ok(prompt.includes("《业务域演进方案草案》"));
+    assert.ok(prompt.includes("汇报判定依据：列举兄弟仓对外接口、MQ 事件、DDL 变更等具体客观证据"));
+    assert.ok(prompt.includes("汇报受影响清单：拟新建或更新的领域目录、文档列表及对应专业子代理委派计划"));
+    assert.ok(prompt.includes("待确认事项：关键业务术语、跨仓流程主导权归属或数据库映射疑问"));
+    assert.ok(prompt.includes("终端人机讨论：等待用户明确确认或调整输入"));
+  });
+
+  await t.test("验证包含专业分工受控写入与零断链验收推进闭环", () => {
+    assert.ok(prompt.includes("第二阶段：受控写入与专业子代理委派"));
+    assert.ok(prompt.includes("开辟新领域场景：委派新领域初始化子代理"));
+    assert.ok(prompt.includes("跨仓主流程编排场景：委派跨仓主流程子代理"));
+    assert.ok(prompt.includes("契约与模型同步场景：委派接口与数据模型子代理"));
+    assert.ok(prompt.includes("第三阶段：零断链验收与推进检查点水位"));
+  });
+
+  await t.test("验证提示词遵循 AGENTS.md 规范（无数字序号列表、无表情符号、无粗体嵌套行内代码）", () => {
+    assert.ok(!/^\s*\d+\.\s/m.test(prompt));
+    assert.ok(!/[\u{1F300}-\u{1F9FF}]/u.test(prompt));
+    assert.ok(!/\*\*[^*]*`[^*]*\*\*/.test(prompt));
+  });
+
+  await t.test("验证通过 buildPrompt 传入 repoType: 'system_knowledge' 自动分流到系统知识库提示词", () => {
+    const routedPrompt = buildPrompt({
+      repo: "system-knowledge",
+      repoType: "system_knowledge",
+    });
+    assert.ok(routedPrompt.includes("系统知识库全局聚合维护指导"));
+    assert.ok(routedPrompt.includes("业务领域识别与目录初始化三步法"));
+  });
+
+  await t.test("验证 buildPlaceholders 自动识别 system-knowledge 仓库类型", () => {
+    const placeholders = buildPlaceholders({
+      repo: "system-knowledge",
+      path: "/srv/workspace/system-knowledge",
+    });
+    assert.equal(placeholders.repoType, "system_knowledge");
+    assert.ok(placeholders.prompt.includes("系统知识库全局聚合维护指导"));
+  });
+});
+
 test("Pipeline Runner - 单仓检查点推进判定", async (t) => {
   const targetCommit = "2222222222222222222222222222222222222222";
 
@@ -362,6 +493,27 @@ test("Pipeline Runner - 单仓检查点推进判定", async (t) => {
       to: "2222222222222222222222222222222222222222",
     };
     assert.equal(isRepoCompleted(status, targetCommit), true);
+  });
+
+  await t.test("基于 dispatchedAt 与 checkpointUpdatedAt 判定推进状态", () => {
+    const dispatchedAt = 100000;
+    // 更新时间在派发时间之后 -> 已完成推进
+    const statusUpdated = {
+      checkpointUpdatedAt: new Date(105000).toISOString(),
+      from: "old-commit",
+      to: "new-commit",
+      hasChanges: false,
+    };
+    assert.equal(isRepoCompleted(statusUpdated, "new-commit", { dispatchedAt }), true);
+
+    // 更新时间在派发时间之前 -> 尚未完成推进
+    const statusNotYet = {
+      checkpointUpdatedAt: new Date(95000).toISOString(),
+      from: "old-commit",
+      to: "new-commit",
+      hasChanges: true,
+    };
+    assert.equal(isRepoCompleted(statusNotYet, "new-commit", { dispatchedAt }), false);
   });
 
   await t.test("hasChanges 为 false 且非 error 状态判定完成", () => {
@@ -449,6 +601,7 @@ test("Pipeline Runner - 看板与报告格式化", async (t) => {
         {
           repo: "up-to-date-repo",
           path: "/srv/workspace/up-to-date-repo",
+          repoType: "code",
           status: "skipped",
           durationMs: 0,
           message: "远端检查点已对齐",
@@ -456,6 +609,7 @@ test("Pipeline Runner - 看板与报告格式化", async (t) => {
         {
           repo: "order-service",
           path: "/srv/workspace/order-service",
+          repoType: "code",
           status: "completed",
           targetCommit: "2222222",
           durationMs: 60000,
@@ -464,6 +618,7 @@ test("Pipeline Runner - 看板与报告格式化", async (t) => {
         {
           repo: "payment-service",
           path: "/srv/workspace/payment-service",
+          repoType: "code",
           status: "failed",
           targetCommit: "3333333",
           durationMs: 60000,
@@ -754,5 +909,330 @@ test("Pipeline Runner - 流程调度与观测闭环（模拟执行）", async (t
 
     // 清理临时文件
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+});
+
+test("Pipeline Runner - 两阶段调度（单仓巡检与系统知识库全局聚合）", async (t) => {
+  await t.test("确保两阶段执行顺序：代码仓在前，系统知识仓在后", async () => {
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "system-knowledge",
+          path: "/srv/workspace/system-knowledge",
+          repoType: "system_knowledge",
+          status: "changed",
+          hasChanges: true,
+          from: "111",
+          to: "222",
+        },
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "changed",
+          hasChanges: true,
+          from: "333",
+          to: "444",
+        },
+      ],
+    };
+
+    const dispatched: string[] = [];
+    const execFn = async () => ({
+      stdout: JSON.stringify({ ok: true, data: mockScanData }),
+      stderr: "",
+    });
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dryRun: true,
+        dispatchCmd: "dispatch --repo {{repo}}",
+      },
+      { execFn }
+    )) as DryRunResult;
+
+    assert.equal(result.dryRun, true);
+    assert.equal(result.total, 2);
+    // 验证无论输入顺序如何，order-service (code) 始终排在前面，system-knowledge 排在后面
+    assert.equal(result.dryRunOutput[0]?.repo, "order-service");
+    assert.equal(result.dryRunOutput[1]?.repo, "system-knowledge");
+  });
+
+  await t.test("前序代码仓更新触发系统知识仓第二阶段调度并注入巡检摘要", async () => {
+    let mockTime = 1000;
+    const nowFn = () => mockTime;
+    const sleepFn = async () => {
+      mockTime += 1000;
+    };
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "changed",
+          hasChanges: true,
+          from: "111",
+          to: "222",
+        },
+        {
+          repo: "system-knowledge",
+          path: "/srv/workspace/system-knowledge",
+          repoType: "system_knowledge",
+          status: "upToDate",
+          hasChanges: false,
+          from: "999",
+          to: "999",
+        },
+      ],
+    };
+
+    const dispatchedCmds: string[] = [];
+    const execFn = async (cmd: string) => {
+      if (cmd.includes("maintenance.list") && !cmd.includes("-- path=")) {
+        return { stdout: JSON.stringify({ ok: true, data: mockScanData }), stderr: "" };
+      }
+      if (cmd.includes("order-service")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              repo: "order-service",
+              from: "222",
+              to: "222",
+              hasChanges: false,
+              status: "upToDate",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("system-knowledge")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              repo: "system-knowledge",
+              from: "999",
+              to: "999",
+              checkpointUpdatedAt: new Date(mockTime + 500).toISOString(),
+              hasChanges: false,
+              status: "upToDate",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --repo {{repo}} --prompt '{{prompt}}'",
+        timeout: 1,
+        interval: 0.001,
+      },
+      {
+        execFn,
+        dispatchFn: async (cmd: string) => {
+          dispatchedCmds.push(cmd);
+        },
+        sleepFn,
+        nowFn,
+      }
+    )) as PipelineSummary;
+
+    assert.equal(result.total, 2);
+    assert.equal(result.completed, 2);
+    assert.equal(dispatchedCmds.length, 2);
+    // 验证第二阶段派发命令中包含系统知识库提示词与前序代码仓更新摘要
+    const sysCmd = dispatchedCmds[1]!;
+    assert.ok(sysCmd.includes("system-knowledge"));
+    assert.ok(sysCmd.includes("系统知识库全局聚合维护指导"));
+    assert.ok(sysCmd.includes("order-service：已推进检查点至 222"));
+  });
+
+  await t.test("前序代码仓均无变更且系统知识仓无变更时，系统知识仓自动跳过", async () => {
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "upToDate",
+          hasChanges: false,
+          from: "222",
+          to: "222",
+        },
+        {
+          repo: "system-knowledge",
+          path: "/srv/workspace/system-knowledge",
+          repoType: "system_knowledge",
+          status: "upToDate",
+          hasChanges: false,
+          from: "999",
+          to: "999",
+        },
+      ],
+    };
+
+    const dispatchedCmds: string[] = [];
+    const execFn = async () => ({
+      stdout: JSON.stringify({ ok: true, data: mockScanData }),
+      stderr: "",
+    });
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --repo {{repo}}",
+      },
+      {
+        execFn,
+        dispatchFn: async (cmd: string) => {
+          dispatchedCmds.push(cmd);
+        },
+      }
+    )) as PipelineSummary;
+
+    assert.equal(result.total, 2);
+    assert.equal(result.skipped, 2);
+    assert.equal(result.completed, 0);
+    assert.equal(dispatchedCmds.length, 0);
+    const sysRes = result.results.find((r) => r.repo === "system-knowledge");
+    assert.equal(sysRes?.status, "skipped");
+    assert.ok(sysRes?.message?.includes("跳过系统层维护"));
+  });
+
+  await t.test("开启 --skip-system-knowledge 时跳过系统知识库调度", async () => {
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "changed",
+          hasChanges: true,
+          from: "111",
+          to: "222",
+        },
+        {
+          repo: "system-knowledge",
+          path: "/srv/workspace/system-knowledge",
+          repoType: "system_knowledge",
+          status: "changed",
+          hasChanges: true,
+          from: "888",
+          to: "999",
+        },
+      ],
+    };
+
+    const execFn = async () => ({
+      stdout: JSON.stringify({ ok: true, data: mockScanData }),
+      stderr: "",
+    });
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dryRun: true,
+        skipSystemKnowledge: true,
+        dispatchCmd: "dispatch --repo {{repo}}",
+      },
+      { execFn }
+    )) as DryRunResult;
+
+    // 系统知识仓被完全排除
+    assert.equal(result.total, 1);
+    assert.equal(result.dryRunOutput.length, 1);
+    assert.equal(result.dryRunOutput[0]?.repo, "order-service");
+  });
+
+  await t.test("支持实时日志文件追加落盘 (logFile)", async () => {
+    const tmpLogFile = path.join(os.tmpdir(), `test-pipeline-${Date.now()}.log`);
+
+    const mockScanData = {
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "changed",
+          hasChanges: true,
+          from: "111",
+          to: "222",
+        },
+      ],
+    };
+
+    const execFn = async () => ({
+      stdout: JSON.stringify({ ok: true, data: mockScanData }),
+      stderr: "",
+    });
+
+    const dispatchFn = async () => ({ pid: 1, output: "", exited: true });
+    let sleepCount = 0;
+    const sleepFn = async () => {
+      sleepCount++;
+    };
+
+    let queryCount = 0;
+    const mockQueryExec = async (cmd: string) => {
+      queryCount++;
+      if (queryCount === 1) {
+        return {
+          stdout: JSON.stringify({ ok: true, data: mockScanData }),
+          stderr: "",
+        };
+      }
+      return {
+        stdout: JSON.stringify({
+          ok: true,
+          data: {
+            repo: "order-service",
+            path: "/srv/workspace/order-service",
+            status: "upToDate",
+            hasChanges: false,
+            from: "222",
+            to: "222",
+          },
+        }),
+        stderr: "",
+      };
+    };
+
+    try {
+      await runPipeline(
+        {
+          profile: "skm",
+          dispatchCmd: "dispatch --repo {{repo}}",
+          logFile: tmpLogFile,
+        },
+        {
+          execFn: mockQueryExec,
+          dispatchFn,
+          sleepFn,
+        }
+      );
+
+      assert.ok(fs.existsSync(tmpLogFile));
+      const logContent = fs.readFileSync(tmpLogFile, "utf8");
+      assert.match(logContent, /开始执行知识维护流水线/);
+      assert.match(logContent, /\[DISPATCH\] 派发维护任务 -> 仓库: order-service/);
+      assert.match(logContent, /\[SUCCESS\] 仓库 order-service 检查点推进成功/);
+      assert.match(logContent, /\[SUMMARY\] 流水线执行完毕/);
+    } finally {
+      if (fs.existsSync(tmpLogFile)) {
+        fs.unlinkSync(tmpLogFile);
+      }
+    }
   });
 });

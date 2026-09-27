@@ -462,6 +462,28 @@
             "type": "string",
             "description": "Repository identifier or name"
           },
+          "repoType": {
+            "type": "string",
+            "enum": [
+              "code",
+              "system_knowledge"
+            ],
+            "description": "Repository architecture type (code or system_knowledge)"
+          },
+          "checkpointUpdatedAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Timestamp when repository checkpoint was last updated in state"
+          },
+          "actionTaken": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Action taken at last checkpoint completion"
+          },
           "branch": {
             "type": "string",
             "description": "Inspected branch name"
@@ -620,6 +642,28 @@
                 "repo": {
                   "type": "string",
                   "description": "Repository identifier or name"
+                },
+                "repoType": {
+                  "type": "string",
+                  "enum": [
+                    "code",
+                    "system_knowledge"
+                  ],
+                  "description": "Repository architecture type (code or system_knowledge)"
+                },
+                "checkpointUpdatedAt": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Timestamp when repository checkpoint was last updated in state"
+                },
+                "actionTaken": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Action taken at last checkpoint completion"
                 },
                 "branch": {
                   "type": "string",
@@ -1158,3 +1202,4 @@
     ".actiondock/generated/actions.d.ts"
   ]
 }
+

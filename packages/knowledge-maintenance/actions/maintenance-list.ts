@@ -17,6 +17,7 @@ export type Output = ActionOutput<"maintenance.list">;
 
 interface RepoScanConfig {
   path: string;
+  repoType?: "code" | "system_knowledge" | undefined;
   branch?: string | undefined;
   sourceBranch?: string | undefined;
 }
@@ -26,6 +27,9 @@ type SingleRepoScanResult = {
   path: string;
   repo?: string;
   branch?: string;
+  repoType?: "code" | "system_knowledge";
+  checkpointUpdatedAt?: string | null;
+  actionTaken?: string | null;
   hasChanges: boolean;
   from?: string | null;
   to?: string;
@@ -79,10 +83,15 @@ async function scanSingleRepo(
       );
     }
 
-    // 1. Determine target branch (aligned with maintenance.sync's detectRepoType inference)
+    // 1. Determine target branch and repo architecture type
+    let repoType = repoInput.repoType;
+    if (!repoType) {
+      repoType = await detectRepoType(git);
+    }
+
     let targetBranch = repoInput.branch ?? repoInput.sourceBranch;
     if (!targetBranch) {
-      targetBranch = (await detectRepoType(git)) === "code" ? "release" : "master";
+      targetBranch = repoType === "code" ? "release" : "master";
     }
     const branches = await git.listBranchNames();
 
@@ -101,10 +110,15 @@ async function scanSingleRepo(
     const savedState = await ctx.state.get<any>(stateKey);
     const fromCommit: string | null =
       savedState && typeof savedState.commit === "string" ? savedState.commit : null;
+    const checkpointUpdatedAt: string | null =
+      savedState && typeof savedState.updatedAt === "string" ? savedState.updatedAt : null;
+    const actionTaken: string | null =
+      savedState && typeof savedState.actionTaken === "string" ? savedState.actionTaken : null;
 
     ctx.log.info("Resolved repository checkpoint and target commit", {
       repo: repoName,
       branch: targetBranch,
+      repoType,
       from: fromCommit,
       to: toCommit,
     });
@@ -128,6 +142,9 @@ async function scanSingleRepo(
         path: resolvedPath,
         repo: repoName,
         branch: targetBranch,
+        repoType,
+        checkpointUpdatedAt,
+        actionTaken,
         from: null,
         to: toCommit,
         commitCount: totalCommits,
@@ -146,6 +163,9 @@ async function scanSingleRepo(
         path: resolvedPath,
         repo: repoName,
         branch: targetBranch,
+        repoType,
+        checkpointUpdatedAt,
+        actionTaken,
         from: fromCommit,
         to: toCommit,
         commitCount: 0,
@@ -199,6 +219,9 @@ async function scanSingleRepo(
       path: resolvedPath,
       repo: repoName,
       branch: targetBranch,
+      repoType,
+      checkpointUpdatedAt,
+      actionTaken,
       from: fromCommit,
       to: toCommit,
       commitCount,
@@ -267,6 +290,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
         } else if (item && typeof item.path === "string" && item.path.trim()) {
           reposToScan.push({
             path: item.path.trim(),
+            ...(item.repoType ? { repoType: item.repoType } : {}),
             ...(item.branch ? { branch: item.branch } : {}),
             ...(item.sourceBranch ? { branch: item.sourceBranch } : {}),
           });
@@ -307,6 +331,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     const singleResult = await scanSingleRepo(
       {
         path: repoConfig.path,
+        repoType: repoConfig.repoType,
         branch: repoConfig.branch ?? input.branch,
       },
       ctx,

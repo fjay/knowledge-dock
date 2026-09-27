@@ -1,0 +1,325 @@
+{
+  "$schema": "https://actiondock.dev/schema/v2.json",
+  "schemaVersion": 2,
+  "id": "orchestrator",
+  "name": "Knowledge Orchestrator",
+  "version": "0.1.0",
+  "description": "Local client orchestration package for multi-repository knowledge maintenance",
+  "actions": {
+    "orchestrator.pipeline": {
+      "entry": "actions/pipeline.ts",
+      "description": "Schedule and drive end-to-end two-phase knowledge maintenance pipeline across code repositories and system knowledge base.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string",
+            "description": "ActionDock client remote profile identifier used for remote inspection and dispatch (defaults to 'skm')",
+            "default": "skm",
+            "examples": [
+              "skm"
+            ]
+          },
+          "dispatchCmd": {
+            "type": "string",
+            "description": "External agent dispatch command template with placeholder interpolation (required in non-dry-run mode)",
+            "examples": [
+              "ad run my-agent.dispatch --profile skm -- repo=\"{{repo}}\" prompt=\"{{prompt}}\"",
+              "curl -s -X POST https://agent.internal/api/dispatch -d '{\"repo\": \"{{repo}}\", \"to\": \"{{to}}\"}'"
+            ]
+          },
+          "timeout": {
+            "type": "number",
+            "description": "Timeout in minutes for waiting single repository checkpoint progression (default: 15)",
+            "default": 15,
+            "examples": [
+              15,
+              30
+            ]
+          },
+          "interval": {
+            "type": "number",
+            "description": "Polling interval in seconds between remote checkpoint status queries (default: 10)",
+            "default": 10,
+            "examples": [
+              10,
+              5
+            ]
+          },
+          "dryRun": {
+            "type": "boolean",
+            "description": "Dry-run mode, only scanning remote repositories and rendering dispatch commands without triggering execution (default: false)",
+            "default": false,
+            "examples": [
+              false,
+              true
+            ]
+          },
+          "only": {
+            "type": "string",
+            "description": "Filter to only process specified repository or comma-separated list of repositories (e.g. 'order-service,payment-service')",
+            "examples": [
+              "order-service",
+              "order-service,payment-service"
+            ]
+          },
+          "skipSystemKnowledge": {
+            "type": "boolean",
+            "description": "Skip second-phase global aggregation maintenance on system knowledge base (default: false)",
+            "default": false,
+            "examples": [
+              false,
+              true
+            ]
+          },
+          "reportFile": {
+            "type": "string",
+            "description": "Output path for the final Markdown summary report (default: 'maintenance-report.md')",
+            "default": "maintenance-report.md",
+            "examples": [
+              "maintenance-report.md",
+              "custom-report.md"
+            ]
+          },
+          "logFile": {
+            "type": "string",
+            "description": "Optional log file path to append real-time execution progress and timestamps (supports tail -f)",
+            "examples": [
+              "/var/log/knowledge-pipeline.log",
+              "maintenance-pipeline.log"
+            ]
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "success",
+          "total",
+          "completed",
+          "skipped",
+          "failed",
+          "durationMs",
+          "report",
+          "results",
+          "dryRunResults"
+        ],
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "description": "Whether the pipeline execution succeeded without any repository failures"
+          },
+          "total": {
+            "type": "integer",
+            "description": "Total number of scanned repositories"
+          },
+          "completed": {
+            "type": "integer",
+            "description": "Number of repositories that successfully completed maintenance and checkpoint progression"
+          },
+          "skipped": {
+            "type": "integer",
+            "description": "Number of repositories skipped because no changes were detected"
+          },
+          "failed": {
+            "type": "integer",
+            "description": "Number of repositories that failed or timed out"
+          },
+          "durationMs": {
+            "type": "integer",
+            "description": "Total elapsed time in milliseconds for the pipeline execution"
+          },
+          "report": {
+            "type": "string",
+            "description": "Formatted Markdown settlement report of pipeline execution"
+          },
+          "reportFile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Output report file path if written, or null if omitted"
+          },
+          "logFile": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Log file path if real-time logging was configured, or null"
+          },
+          "results": {
+            "type": "array",
+            "description": "Detailed execution results for each repository",
+            "items": {
+              "type": "object",
+              "required": [
+                "repo",
+                "path",
+                "repoType",
+                "status",
+                "durationMs"
+              ],
+              "properties": {
+                "repo": {
+                  "type": "string",
+                  "description": "Repository identifier or name"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Repository path"
+                },
+                "repoType": {
+                  "type": "string",
+                  "enum": [
+                    "code",
+                    "system_knowledge"
+                  ],
+                  "description": "Repository architecture type"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "completed",
+                    "skipped",
+                    "failed"
+                  ],
+                  "description": "Execution outcome status"
+                },
+                "targetCommit": {
+                  "type": "string",
+                  "description": "Target HEAD commit hash"
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "description": "Elapsed time in milliseconds for this repository"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "Human-readable summary or error message"
+                }
+              }
+            }
+          },
+          "dryRunResults": {
+            "type": "array",
+            "description": "Dry-run dispatch command preview list (empty array in non-dry-run mode)",
+            "items": {
+              "type": "object",
+              "required": [
+                "repo",
+                "path",
+                "repoType",
+                "renderedCommand"
+              ],
+              "properties": {
+                "repo": {
+                  "type": "string",
+                  "description": "Repository identifier or name"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Repository path"
+                },
+                "repoType": {
+                  "type": "string",
+                  "description": "Repository architecture type"
+                },
+                "renderedCommand": {
+                  "type": "string",
+                  "description": "Rendered dispatch command with placeholders interpolated"
+                },
+                "placeholders": {
+                  "type": "object",
+                  "description": "Extracted placeholders for the repository"
+                }
+              }
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "title": "Dry-run preview of maintenance pipeline",
+          "input": {
+            "profile": "skm",
+            "dryRun": true,
+            "dispatchCmd": "ad run my-agent.dispatch --profile skm -- repo=\"{{repo}}\" prompt=\"{{prompt}}\""
+          },
+          "output": {
+            "success": true,
+            "total": 2,
+            "completed": 0,
+            "skipped": 1,
+            "failed": 0,
+            "durationMs": 0,
+            "report": "# 知识维护流水线执行报告\n\n- 扫描总仓库数：2\n",
+            "reportFile": null,
+            "results": [],
+            "dryRunResults": [
+              {
+                "repo": "order-service",
+                "path": "/srv/workspace/order-service",
+                "repoType": "code",
+                "renderedCommand": "ad run my-agent.dispatch --profile skm -- repo=\"order-service\""
+              }
+            ]
+          }
+        },
+        {
+          "title": "Execute full two-phase maintenance pipeline",
+          "input": {
+            "profile": "skm",
+            "dispatchCmd": "ad run my-agent.dispatch --profile skm -- repo=\"{{repo}}\" prompt=\"{{prompt}}\"",
+            "timeout": 15,
+            "interval": 10,
+            "reportFile": "maintenance-report.md"
+          },
+          "output": {
+            "success": true,
+            "total": 2,
+            "completed": 2,
+            "skipped": 0,
+            "failed": 0,
+            "durationMs": 45000,
+            "report": "# 知识维护流水线执行报告\n\n- 扫描总仓库数：2\n- 维护成功数：2\n",
+            "reportFile": "maintenance-report.md",
+            "results": [
+              {
+                "repo": "order-service",
+                "path": "/srv/workspace/order-service",
+                "repoType": "code",
+                "status": "completed",
+                "targetCommit": "2222222222222222222222222222222222222222",
+                "durationMs": 25000,
+                "message": "检查点已成功推进至 2222222222222222222222222222222222222222"
+              },
+              {
+                "repo": "system-knowledge",
+                "path": "/srv/workspace/system-knowledge",
+                "repoType": "system_knowledge",
+                "status": "completed",
+                "targetCommit": "3333333333333333333333333333333333333333",
+                "durationMs": 20000,
+                "message": "检查点已成功推进至 3333333333333333333333333333333333333333"
+              }
+            ],
+            "dryRunResults": []
+          }
+        }
+      ]
+    }
+  },
+  "files": [
+    "src",
+    ".actiondock/generated/actions.d.ts"
+  ],
+  "playbooks": {
+    "scheduled-maintenance": {
+      "entry": "playbooks/scheduled-maintenance.md",
+      "description": "Standard operating procedure for periodic and scheduled knowledge maintenance pipeline execution",
+      "actions": [
+        "orchestrator.pipeline"
+      ]
+    }
+  }
+}

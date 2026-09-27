@@ -1,0 +1,31 @@
+{
+  "name": "knowledge-orchestrator",
+  "version": "0.1.0",
+  "description": "Local client orchestration plane for end-to-end multi-repository knowledge maintenance pipelines",
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx --test tests/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=24.12.0"
+  },
+  "dependencies": {
+    "@actiondock/sdk": "^2.7.0"
+  },
+  "devDependencies": {
+    "@actiondock/runtime-node": "^2.7.0",
+    "@actiondock/testing": "^2.7.0",
+    "@types/node": "^22.13.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  },
+  "peerDependencies": {
+    "@actiondock/cli": ">=2.4.1"
+  },
+  "peerDependenciesMeta": {
+    "@actiondock/cli": {
+      "optional": true
+    }
+  }
+}
