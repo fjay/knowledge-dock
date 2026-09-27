@@ -11,3 +11,6 @@ Thumbs.db
 
 # 本地多仓流水线默认结算报告产物
 maintenance-report.md
+
+# 本地多仓清单配置
+server/config/repos.json

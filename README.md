@@ -131,13 +131,18 @@ ad run workspace/search.rg --profile sk -- pattern="MK40001"
 
 ## 深入探索
 
-关于架构设计演进、系统部署交付、流水线编排调度与日常知识运维的深度规程，请参阅：
+关于架构设计、产品愿景、核心概念、知识模型、智能体协同、部署实战与端到端演化案例的深度规程，请参阅：
 
-- 全景架构设计指南：自动维护与反馈闭环实践、物理分层设计手记与检查点基线哲学，参见 [docs/architecture.md](docs/architecture.md)；
+- 为什么需要它与方案定位（对比 RAG / Wiki）：参见 [docs/vision.md](docs/vision.md)；
+- 核心概念与四大设计原则：参见 [docs/concepts.md](docs/concepts.md)；
+- 全景架构设计指南：组件构成、生命周期、分层解耦与视图隔离，参见 [docs/architecture.md](docs/architecture.md)；
+- 核心流程与生命周期流转：双分支增量维护、待审池流转与三阶段调度，参见 [docs/workflow.md](docs/workflow.md)；
+- 知识模型与内容组织规范：六类知识骨架与待审池语义标记节规范，参见 [docs/knowledge-model.md](docs/knowledge-model.md)；
+- 智能体体系设计与角色分工：贡献守门、特权维护与总控编排矩阵，参见 [docs/agent-design.md](docs/agent-design.md)；
 - 部署与交付实战指南：容器部署、环境变量、纳管仓库清单配置与安全基线，参见 [docs/deployment.md](docs/deployment.md)；
-- 流水线编排实战指南：三阶段流水线调度（单仓增量巡检、系统知识跨仓聚合、待审池串行消费）、命令模板安全渲染与审计报告结算，参见 [docs/orchestration.md](docs/orchestration.md)；
-- 知识全生命周期运维规程：待审池 Candidate Markdown 语义规范、失效判定准则与质量门禁，参见 [docs/operations.md](docs/operations.md)；
-- 知识贡献技能规程：面向开发与运营的知识捕获、语义模板与待审池安全投递，参见 [skills/knowledge-contributor/SKILL.md](skills/knowledge-contributor/SKILL.md)。
+- 知识全生命周期运维规程：检查点运维、质量门禁与业务代码防污染红线，参见 [docs/operations.md](docs/operations.md)；
+- 流水线编排实战指南：三阶段流水线调度、命令模板安全渲染与审计报告结算，参见 [docs/orchestration.md](docs/orchestration.md)；
+- 真实业务演进案例：支付超时状态（PAY_TIMEOUT）驱动的知识自演进，参见 [docs/examples/payment-flow.md](docs/examples/payment-flow.md)。
 
 ---
 
