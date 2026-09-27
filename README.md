@@ -129,12 +129,12 @@ ad run knowledge/knowledge.collect --profile sk --input-file candidate.json
 
 ## 深入探索
 
-关于系统的架构设计、部署实操、维护规程与自动化调度细节，请阅读以下技术文档：
+关于系统的架构设计、部署实操、流水线调度与知识运维细节，请阅读「一核四册」官方技术文档：
 
-- **架构设计与演进理念**：单端口多视图安全模型与闭环演进机制，请阅读 [docs/design.md](docs/design.md)。
-- **部署与运维指南**：宿主机目录持久化规范、证书替换与容器健康检查，请阅读 [docs/deployment.md](docs/deployment.md)。
-- **维护规程与动作参考**：维护智能体五步标准作业法与全量动作参数，请阅读 [docs/maintenance.md](docs/maintenance.md)。
-- **流水线调度器手册**：多代码仓巡检调度、断点续传机制与看板配置，请阅读 [docs/pipeline-runner.md](docs/pipeline-runner.md)。
+- **全景架构设计白皮书**：物理分层架构、单端口多视图、两阶段调度引擎与智能体协同演进，请阅读 [docs/architecture.md](docs/architecture.md)。
+- **服务端部署与运维指南**：宿主机目录持久化规范、环境变量约束、私有 Git 免密与排障速查，请阅读 [docs/deployment.md](docs/deployment.md)。
+- **客户端多仓流水线调度指南**：两阶段调度机制、执行机物理边界、模板引擎占位符与后台守护进程运维，请阅读 [docs/orchestration.md](docs/orchestration.md)。
+- **端到端知识运维与闭环规程**：全生命周期流转、线上排障经验收集、检查点推进与零断链门禁，请阅读 [docs/operations.md](docs/operations.md)。
 - **智能体编排技能规范**：总控编排智能体技能规范与任务流转规则，请阅读 [skills/knowledge-maintenance-orchestrator/SKILL.md](skills/knowledge-maintenance-orchestrator/SKILL.md)。
 
 ---
