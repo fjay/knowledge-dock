@@ -163,6 +163,9 @@ describe("orchestrator.pipeline", () => {
           );
         }
         handle.emitExit({ code: 0, signal: null });
+      } else if (cmd.includes("knowledge.list")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { items: [] } }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
       } else {
         // 派发命令执行
         dispatchedCommands.push(cmd);
@@ -328,5 +331,146 @@ describe("orchestrator.pipeline", () => {
     assert.ok(skmConfig.includes('"knowledge"'));
     assert.ok(skmConfig.includes('"maintenance"'));
     assert.ok(!skmConfig.includes("orchestrator"), "skm 视图绝不包含 orchestrator");
+  });
+
+  it("三阶段执行与待审池消费闭环：单代码仓、系统知识仓与待审池候选均成功闭环", async () => {
+    const fakeDriver = new FakeProcessDriver();
+    const dispatchedCommands: string[] = [];
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          branch: "release",
+          status: "changed",
+          hasChanges: true,
+          from: "1111111",
+          to: "2222222",
+          commitCount: 1,
+          commits: [{ hash: "2222222", shortHash: "2222222", message: "feat: update" }],
+        },
+      ],
+    };
+
+    const mockCandidate = {
+      id: "20260924-kb1",
+      filename: "kb1.md",
+      title: "Kafka 排障手册",
+      path: "/srv/knowledge-inbox/pending/kb1.md",
+      status: "pending",
+    };
+    let inboxItems = [mockCandidate];
+
+    fakeDriver.onSpawn = (handle: any, spec: any) => {
+      const cmd = spec.args[1] || spec.args.join(" ");
+
+      if (cmd.includes("maintenance.list")) {
+        if (!cmd.includes("-- path=")) {
+          handle.emitOutput("stdout", JSON.stringify({ ok: true, data: mockScanData }) + "\n");
+        } else {
+          handle.emitOutput(
+            "stdout",
+            JSON.stringify({
+              ok: true,
+              data: {
+                repo: "order-service",
+                from: "2222222",
+                to: "2222222",
+                hasChanges: false,
+                status: "upToDate",
+              },
+            }) + "\n"
+          );
+        }
+        handle.emitExit({ code: 0, signal: null });
+      } else if (cmd.includes("knowledge.list")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { items: [...inboxItems] } }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
+        // 第一次查询返回候选，后续轮询探测时移出
+        inboxItems = [];
+      } else {
+        dispatchedCommands.push(cmd);
+        handle.emitExit({ code: 0, signal: null });
+      }
+      handle.emitOutputClosed("natural");
+    };
+
+    const runtime = createTestRuntime({
+      platform: createTestPlatform({ processDriver: fakeDriver }),
+    });
+
+    const result = await runtime.run(pipelineAction, {
+      profile: "skm",
+      dryRun: false,
+      dispatchCmd: 'dispatch --target="{{candidateId}}{{repo}}"',
+      timeout: 1,
+      interval: 0.001,
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.total, 1);
+    assert.equal(result.completed, 1);
+    assert.equal(result.failed, 0);
+    assert.equal(result.inboxTotal, 1);
+    assert.equal(result.inboxCompleted, 1);
+    assert.equal(result.inboxFailed, 0);
+    assert.equal(result.inboxSkipped, false);
+    assert.equal(result.inboxResults.length, 1);
+    assert.equal(result.inboxResults[0].id, "20260924-kb1");
+    assert.equal(result.inboxResults[0].status, "completed");
+
+    // 验证派发发生
+    assert.equal(dispatchedCommands.length, 2);
+    assert.ok(dispatchedCommands[0].includes("order-service"));
+    assert.ok(dispatchedCommands[1].includes("20260924-kb1"));
+  });
+
+  it("skipInbox 参数生效：跳过第三阶段待审池巡检", async () => {
+    const fakeDriver = new FakeProcessDriver();
+    let knowledgeListQueried = false;
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "clean-service",
+          path: "/srv/workspace/clean-service",
+          status: "upToDate",
+          hasChanges: false,
+        },
+      ],
+    };
+
+    fakeDriver.onSpawn = (handle: any, spec: any) => {
+      const cmd = spec.args[1] || spec.args.join(" ");
+      if (cmd.includes("maintenance.list")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: mockScanData }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
+      } else if (cmd.includes("knowledge.list")) {
+        knowledgeListQueried = true;
+        handle.emitExit({ code: 0, signal: null });
+      } else {
+        handle.emitExit({ code: 0, signal: null });
+      }
+      handle.emitOutputClosed("natural");
+    };
+
+    const runtime = createTestRuntime({
+      platform: createTestPlatform({ processDriver: fakeDriver }),
+    });
+
+    const result = await runtime.run(pipelineAction, {
+      profile: "skm",
+      dryRun: false,
+      dispatchCmd: 'dispatch --target="{{repo}}"',
+      skipInbox: true,
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.inboxSkipped, true);
+    assert.equal(result.inboxTotal, 0);
+    assert.equal(knowledgeListQueried, false, "开启 skipInbox 时严禁调用 knowledge.list 查询待审池");
   });
 });

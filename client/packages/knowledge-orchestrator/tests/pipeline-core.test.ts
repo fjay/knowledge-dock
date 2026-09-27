@@ -13,13 +13,20 @@ import {
   buildPrompt,
   buildCodeRepoPrompt,
   buildSystemKnowledgePrompt,
+  buildInboxCandidatePrompt,
+  buildInboxPlaceholders,
   buildPlaceholders,
   renderTemplate,
   isRepoCompleted,
   generateMarkdownReport,
+  queryRemoteInboxList,
+  runInboxPhase,
   runPipeline,
   type DryRunResult,
   type PipelineSummary,
+  type InboxCandidate,
+  type InboxCandidateResult,
+  type InboxPhaseSummary,
 } from "../src/pipeline-core.ts";
 
 test("Pipeline Runner - 命令行参数解析", async (t) => {
@@ -32,6 +39,7 @@ test("Pipeline Runner - 命令行参数解析", async (t) => {
     assert.equal(opts.dryRun, false);
     assert.equal(opts.only, null);
     assert.equal(opts.skipSystemKnowledge, false);
+    assert.equal(opts.skipInbox, false);
     assert.equal(opts.reportFile, "maintenance-report.md");
     assert.equal(opts.help, false);
   });
@@ -39,6 +47,13 @@ test("Pipeline Runner - 命令行参数解析", async (t) => {
   await t.test("解析 --skip-system-knowledge 参数", () => {
     const opts = parseArgs(["--skip-system-knowledge"]);
     assert.equal(opts.skipSystemKnowledge, true);
+  });
+
+  await t.test("解析 --skip-inbox 参数", () => {
+    const opts = parseArgs(["--skip-inbox"]);
+    assert.equal(opts.skipInbox, true);
+    const optsEq = parseArgs(["--skip-inbox=true"]);
+    assert.equal(optsEq.skipInbox, true);
   });
 
   await t.test("解析指定参数（空格分隔）", () => {
@@ -1236,3 +1251,440 @@ test("Pipeline Runner - 两阶段调度（单仓巡检与系统知识库全局�
     }
   });
 });
+
+test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消费", async (t) => {
+  const mockCandidate = {
+    id: "20260924-a1b2c3",
+    filename: "20260924-112345-a1b2c3-redis-split-brain.md",
+    path: "/srv/knowledge-inbox/pending/20260924-112345-a1b2c3-redis-split-brain.md",
+    status: "pending",
+    title: "Redis Cluster 脑裂恢复指南",
+    domain: "infrastructure",
+    tags: ["redis", "cluster", "failover"],
+    repos: ["order-service"],
+    createdAt: "2026-09-24T11:23:45.000Z",
+  };
+
+  await t.test("buildInboxCandidatePrompt 生成合规性与核心指令要素验证", () => {
+    const prompt = buildInboxCandidatePrompt(mockCandidate);
+
+    // 元数据与背景
+    assert.ok(prompt.includes("20260924-a1b2c3"));
+    assert.ok(prompt.includes("Redis Cluster 脑裂恢复指南"));
+    assert.ok(prompt.includes("20260924-112345-a1b2c3-redis-split-brain.md"));
+    assert.ok(prompt.includes("/srv/knowledge-inbox/pending/20260924-112345-a1b2c3-redis-split-brain.md"));
+    assert.ok(prompt.includes("infrastructure"));
+    assert.ok(prompt.includes("order-service"));
+    assert.ok(prompt.includes("redis, cluster, failover"));
+
+    // 审查流程与四路决议
+    assert.ok(prompt.includes("files.read"));
+    assert.ok(prompt.includes("accepted"));
+    assert.ok(prompt.includes("duplicate"));
+    assert.ok(prompt.includes("insufficient_evidence"));
+    assert.ok(prompt.includes("rejected"));
+
+    // 零断链门禁与归档交付动作
+    assert.ok(prompt.includes("links.verify"));
+    assert.ok(prompt.includes("maintenance.publish"));
+    assert.ok(prompt.includes("knowledge.archive"));
+
+    // 规范审计：无数字序号列表、无表情符号、无嵌套行内代码
+    const lines = prompt.split("\n");
+    for (const line of lines) {
+      assert.ok(!/^\s*\d+\.\s+/.test(line), `提示词严禁使用数字列表: ${line}`);
+      assert.ok(!/\*\*`[^`]+`\*\*/.test(line), `提示词严禁在粗体内部嵌套行内代码: ${line}`);
+    }
+    const emojiRegex = /[\u{1F300}-\u{1F6FF}\u{1F900}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/u;
+    assert.ok(!emojiRegex.test(prompt), "提示词严禁包含表情符号");
+  });
+
+  await t.test("buildInboxPlaceholders 抽取占位符并验证模版插值", () => {
+    const placeholders = buildInboxPlaceholders(mockCandidate);
+
+    assert.equal(placeholders.candidateId, "20260924-a1b2c3");
+    assert.equal(placeholders.candidateTitle, "Redis Cluster 脑裂恢复指南");
+    assert.equal(placeholders.candidateFilename, "20260924-112345-a1b2c3-redis-split-brain.md");
+    assert.equal(placeholders.candidatePath, "/srv/knowledge-inbox/pending/20260924-112345-a1b2c3-redis-split-brain.md");
+    assert.equal(placeholders.candidateDomain, "infrastructure");
+    assert.ok(placeholders.prompt.includes("20260924-a1b2c3"));
+
+    // 模版插值验证
+    const template = 'dispatch --id="{{candidateId}}" --title="{{candidateTitle}}" --file="{{candidateFilename}}"';
+    const rendered = renderTemplate(template, placeholders, { escapeQuotes: true });
+    assert.equal(
+      rendered,
+      'dispatch --id="20260924-a1b2c3" --title="Redis Cluster 脑裂恢复指南" --file="20260924-112345-a1b2c3-redis-split-brain.md"'
+    );
+
+    // 验证包含内部双引号与特殊字符的字段会被正确转义
+    const candidateWithQuotes = {
+      ...mockCandidate,
+      title: 'Redis "Cluster" 脑裂 $(whoami)',
+    };
+    const placeholdersWithQuotes = buildInboxPlaceholders(candidateWithQuotes);
+    const renderedWithQuotes = renderTemplate(template, placeholdersWithQuotes, { escapeQuotes: true });
+    assert.ok(renderedWithQuotes.includes('\\"Cluster\\"'));
+    assert.ok(renderedWithQuotes.includes('\\$(whoami)'));
+  });
+
+  await t.test("runInboxPhase: 待审池为空时秒级跳过", async () => {
+    const mockExec = async (cmd: string) => {
+      assert.ok(cmd.includes("knowledge.list"));
+      return {
+        stdout: JSON.stringify({ ok: true, data: { items: [] } }),
+        stderr: "",
+      };
+    };
+
+    let dispatched = false;
+    const dispatchFn = async () => {
+      dispatched = true;
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "dummy" },
+      { execFn: mockExec, dispatchFn }
+    );
+
+    assert.equal(summary.inboxTotal, 0);
+    assert.equal(summary.inboxCompleted, 0);
+    assert.equal(summary.inboxFailed, 0);
+    assert.equal(summary.inboxSkipped, false);
+    assert.equal(summary.inboxResults.length, 0);
+    assert.equal(dispatched, false, "待审池为空时严禁派发任务");
+  });
+
+  await t.test("runInboxPhase: skipInbox 为 true 时跳过待审池", async () => {
+    let queried = false;
+    const mockExec = async () => {
+      queried = true;
+      return { stdout: "{}", stderr: "" };
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", skipInbox: true },
+      { execFn: mockExec }
+    );
+
+    assert.equal(summary.inboxTotal, 0);
+    assert.equal(summary.inboxCompleted, 0);
+    assert.equal(summary.inboxFailed, 0);
+    assert.equal(summary.inboxSkipped, true);
+    assert.equal(summary.inboxResults.length, 0);
+    assert.equal(queried, false, "skipInbox 为 true 时严禁执行查询");
+  });
+
+  await t.test("runInboxPhase: 多个候选串行逐个派发与轮询探测移出 pending", async () => {
+    const candidate1 = {
+      id: "20260924-c1",
+      filename: "c1.md",
+      title: "Candidate 1",
+    };
+    const candidate2 = {
+      id: "20260924-c2",
+      filename: "c2.md",
+      title: "Candidate 2",
+    };
+
+    // 模拟待审池状态：初始有两个，经过派发与轮询后逐个移出
+    let pendingList = [candidate1, candidate2];
+    const dispatchedList: string[] = [];
+
+    const mockExec = async (cmd: string) => {
+      if (cmd.includes("knowledge.list")) {
+        return {
+          stdout: JSON.stringify({ ok: true, data: { items: [...pendingList] } }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    let sleepCalls = 0;
+    const sleepFn = async () => {
+      sleepCalls++;
+      // 模拟 Agent 异步执行归档：在轮询探测时移出当前候选
+      if (pendingList.length > 0) {
+        pendingList.shift();
+      }
+    };
+
+    const dispatchFn = async (cmd: string, placeholders: any) => {
+      dispatchedList.push(placeholders.candidateId);
+      return { pid: 1, output: "", exited: true };
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: 'dispatch --id="{{candidateId}}"', interval: 1, timeout: 5 },
+      { execFn: mockExec, dispatchFn, sleepFn }
+    );
+
+    assert.equal(summary.inboxTotal, 2);
+    assert.equal(summary.inboxCompleted, 2);
+    assert.equal(summary.inboxFailed, 0);
+    assert.equal(summary.inboxSkipped, false);
+    assert.equal(summary.inboxResults.length, 2);
+    assert.equal(summary.inboxResults[0].id, "20260924-c1");
+    assert.equal(summary.inboxResults[0].status, "completed");
+    assert.equal(summary.inboxResults[1].id, "20260924-c2");
+    assert.equal(summary.inboxResults[1].status, "completed");
+
+    // 验证串行派发顺序
+    assert.deepEqual(dispatchedList, ["20260924-c1", "20260924-c2"]);
+  });
+
+  await t.test("runInboxPhase: 超时容错处理（候选未移出待审池时标记失败）", async () => {
+    const candidate = {
+      id: "20260924-timeout",
+      filename: "timeout.md",
+      title: "Timeout Candidate",
+    };
+
+    // 模拟待审池一直不移出
+    const mockExec = async () => ({
+      stdout: JSON.stringify({ ok: true, data: { items: [candidate] } }),
+      stderr: "",
+    });
+
+    let mockCurrentTime = 1000000;
+    const nowFn = () => mockCurrentTime;
+
+    const sleepFn = async () => {
+      // 步进时间触发超时 (timeout 为 1 分钟 = 60000ms)
+      mockCurrentTime += 70000;
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "dispatch", timeout: 1, interval: 1 },
+      {
+        execFn: mockExec,
+        dispatchFn: async () => {},
+        sleepFn,
+        nowFn,
+      }
+    );
+
+    assert.equal(summary.inboxTotal, 1);
+    assert.equal(summary.inboxCompleted, 0);
+    assert.equal(summary.inboxFailed, 1);
+    assert.equal(summary.inboxResults[0].status, "failed");
+    assert.ok(summary.inboxResults[0].error?.includes("超时"));
+  });
+
+  await t.test("runInboxPhase: 派发异常容错处理（不中断后续候选）", async () => {
+    const candidate1 = { id: "c1", filename: "c1.md", title: "C1" };
+    const candidate2 = { id: "c2", filename: "c2.md", title: "C2" };
+
+    let pendingList = [candidate1, candidate2];
+
+    const mockExec = async () => ({
+      stdout: JSON.stringify({ ok: true, data: { items: [...pendingList] } }),
+      stderr: "",
+    });
+
+    const dispatchFn = async (cmd: string, placeholders: any) => {
+      if (placeholders.candidateId === "c1") {
+        throw new Error("网络连接拒绝");
+      }
+    };
+
+    const sleepFn = async () => {
+      pendingList = pendingList.filter((c) => c.id !== "c2");
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "dispatch", timeout: 5, interval: 1 },
+      { execFn: mockExec, dispatchFn, sleepFn }
+    );
+
+    assert.equal(summary.inboxTotal, 2);
+    assert.equal(summary.inboxCompleted, 1);
+    assert.equal(summary.inboxFailed, 1);
+    assert.equal(summary.inboxResults[0].id, "c1");
+    assert.equal(summary.inboxResults[0].status, "failed");
+    assert.ok(summary.inboxResults[0].error?.includes("网络连接拒绝"));
+    assert.equal(summary.inboxResults[1].id, "c2");
+    assert.equal(summary.inboxResults[1].status, "completed");
+  });
+
+  await t.test("renderDashboard 终端看板支持待审池进度展示", () => {
+    const dashboard = renderDashboard({
+      total: 3,
+      processed: 3,
+      skipped: 1,
+      completed: 2,
+      failed: 0,
+      totalElapsed: 45000,
+      inboxTotal: 4,
+      inboxProcessed: 2,
+      inboxCompleted: 2,
+      inboxFailed: 0,
+      activeCandidate: "20260924-a1 (Redis 排障)",
+      activeCandidateElapsed: 12000,
+    });
+
+    assert.ok(dashboard.includes("待审池进度:"));
+    assert.ok(dashboard.includes("待审候选总数: 4 | 已归档: 2 | 失败: 0"));
+    assert.ok(dashboard.includes("当前待审候选: 20260924-a1 (Redis 排障)"));
+    assert.ok(dashboard.includes("单篇耗时: 00:12"));
+
+    // 验证跳过状态
+    const skippedDashboard = renderDashboard({
+      total: 2,
+      processed: 2,
+      skipped: 2,
+      completed: 0,
+      failed: 0,
+      totalElapsed: 5000,
+      inboxSkipped: true,
+    });
+    assert.ok(skippedDashboard.includes("待审池阶段: 已跳过"));
+  });
+
+  await t.test("generateMarkdownReport 结算报告中待审池明细表格渲染验证", () => {
+    const reportData = {
+      profile: "skm",
+      total: 2,
+      completed: 2,
+      skipped: 0,
+      failed: 0,
+      totalElapsedMs: 30000,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code" as const,
+          status: "completed" as const,
+          durationMs: 15000,
+          message: "检查点推进成功",
+        },
+      ],
+      inboxTotal: 2,
+      inboxCompleted: 1,
+      inboxFailed: 1,
+      inboxSkipped: false,
+      inboxResults: [
+        {
+          id: "20260924-a1",
+          filename: "a1.md",
+          title: "MySQL 2006 超时",
+          durationMs: 8000,
+          status: "completed" as const,
+          error: null,
+        },
+        {
+          id: "20260924-b2",
+          filename: "b2.md",
+          title: "K8s 内存泄露",
+          durationMs: 15000,
+          status: "failed" as const,
+          error: "等待候选归档超时 (15 分钟)",
+        },
+      ],
+    };
+
+    const md = generateMarkdownReport(reportData);
+
+    assert.ok(md.includes("- 待审候选总数：2"));
+    assert.ok(md.includes("- 待审成功归档数：1"));
+    assert.ok(md.includes("- 待审处理失败数：1"));
+    assert.ok(md.includes("## 待审池处理明细"));
+    assert.ok(md.includes("| 候选标识 | 候选标题 | 文件名 | 状态 | 耗时 | 说明 |"));
+    assert.ok(md.includes("| 20260924-a1 | MySQL 2006 超时 | a1.md | 成功归档 | 00:08 | 已完成归档闭环 |"));
+    assert.ok(md.includes("| 20260924-b2 | K8s 内存泄露 | b2.md | 处理失败 | 00:15 | 等待候选归档超时 (15 分钟) |"));
+
+    // 验证 AGENTS.md 规范：无数字列表、无表情符号
+    const lines = md.split("\n");
+    for (const line of lines) {
+      assert.ok(!/^\s*\d+\.\s+/.test(line), `报告严禁使用数字列表: ${line}`);
+    }
+  });
+
+  await t.test("runPipeline 端到端完整三阶段串行调度集成验证", async () => {
+    const mockRepoScan = {
+      batch: true,
+      results: [
+        {
+          repo: "demo-service",
+          path: "/srv/workspace/demo-service",
+          branch: "release",
+          status: "changed",
+          hasChanges: true,
+          from: "111",
+          to: "222",
+          commitCount: 1,
+          commits: [{ hash: "222", shortHash: "222", message: "feat: update" }],
+        },
+      ],
+    };
+
+    const candidate = {
+      id: "20260924-p3",
+      filename: "p3.md",
+      title: "Phase 3 Candidate",
+    };
+    let inboxItems = [candidate];
+
+    const dispatchedCmds: string[] = [];
+    const mockExec = async (cmd: string) => {
+      if (cmd.includes("maintenance.list")) {
+        if (!cmd.includes("-- path=")) {
+          return { stdout: JSON.stringify({ ok: true, data: mockRepoScan }), stderr: "" };
+        }
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: { repo: "demo-service", status: "upToDate", from: "222", to: "222", hasChanges: false },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("knowledge.list")) {
+        return {
+          stdout: JSON.stringify({ ok: true, data: { items: [...inboxItems] } }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    let phase3Started = false;
+    const sleepFn = async () => {
+      // 只有进入第三阶段待审池轮询时，才移出待审池
+      if (phase3Started) {
+        inboxItems = [];
+      }
+    };
+
+    const dispatchFn = async (cmd: string, placeholders: any) => {
+      if (placeholders.candidateId) {
+        phase3Started = true;
+      }
+      dispatchedCmds.push(placeholders.candidateId || placeholders.repo);
+      return { pid: 1, output: "", exited: true };
+    };
+
+    const summary = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --target {{repo}}{{candidateId}}",
+        timeout: 5,
+        interval: 1,
+      },
+      { execFn: mockExec, dispatchFn, sleepFn }
+    )) as PipelineSummary;
+
+    assert.equal(summary.success, true);
+    assert.equal(summary.total, 1);
+    assert.equal(summary.completed, 1);
+    assert.equal(summary.inboxTotal, 1);
+    assert.equal(summary.inboxCompleted, 1);
+    assert.equal(summary.inboxFailed, 0);
+    assert.equal(summary.inboxSkipped, false);
+
+    // 验证派发包含了代码仓与待审候选
+    assert.deepEqual(dispatchedCmds, ["demo-service", "20260924-p3"]);
+  });
+});
+

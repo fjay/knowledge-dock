@@ -8,7 +8,7 @@
   "actions": {
     "orchestrator.pipeline": {
       "entry": "actions/pipeline.ts",
-      "description": "Schedule and drive end-to-end two-phase knowledge maintenance pipeline across code repositories and system knowledge base.",
+      "description": "Schedule and drive end-to-end three-phase knowledge maintenance pipeline across code repositories, system knowledge base, and knowledge inbox.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -72,6 +72,15 @@
               true
             ]
           },
+          "skipInbox": {
+            "type": "boolean",
+            "description": "Skip third-phase knowledge inbox pending candidate inspection and review (default: false)",
+            "default": false,
+            "examples": [
+              false,
+              true
+            ]
+          },
           "reportFile": {
             "type": "string",
             "description": "Output path for the final Markdown summary report (default: 'maintenance-report.md')",
@@ -102,7 +111,12 @@
           "durationMs",
           "report",
           "results",
-          "dryRunResults"
+          "dryRunResults",
+          "inboxTotal",
+          "inboxCompleted",
+          "inboxFailed",
+          "inboxSkipped",
+          "inboxResults"
         ],
         "properties": {
           "success": {
@@ -234,6 +248,69 @@
                 }
               }
             }
+          },
+          "inboxTotal": {
+            "type": "integer",
+            "description": "Total number of pending knowledge inbox candidates scanned"
+          },
+          "inboxCompleted": {
+            "type": "integer",
+            "description": "Number of inbox candidates successfully reviewed and archived"
+          },
+          "inboxFailed": {
+            "type": "integer",
+            "description": "Number of inbox candidates that failed or timed out during review"
+          },
+          "inboxSkipped": {
+            "type": "boolean",
+            "description": "Whether the third-phase inbox review was skipped"
+          },
+          "inboxResults": {
+            "type": "array",
+            "description": "Detailed execution results for each inbox candidate",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "filename",
+                "title",
+                "durationMs",
+                "status"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Unique candidate identifier"
+                },
+                "filename": {
+                  "type": "string",
+                  "description": "Candidate filename"
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Candidate document title"
+                },
+                "durationMs": {
+                  "type": "integer",
+                  "description": "Elapsed time in milliseconds for reviewing this candidate"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "completed",
+                    "failed"
+                  ],
+                  "description": "Processing status of the candidate"
+                },
+                "error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Error message if processing failed, or null"
+                }
+              }
+            }
           }
         }
       },
@@ -262,11 +339,16 @@
                 "repoType": "code",
                 "renderedCommand": "ad run my-agent.dispatch --profile skm -- repo=\"order-service\""
               }
-            ]
+            ],
+            "inboxTotal": 0,
+            "inboxCompleted": 0,
+            "inboxFailed": 0,
+            "inboxSkipped": false,
+            "inboxResults": []
           }
         },
         {
-          "title": "Execute full two-phase maintenance pipeline",
+          "title": "Execute full three-phase maintenance pipeline",
           "input": {
             "profile": "skm",
             "dispatchCmd": "ad run my-agent.dispatch --profile skm -- repo=\"{{repo}}\" prompt=\"{{prompt}}\"",
@@ -303,7 +385,21 @@
                 "message": "检查点已成功推进至 3333333333333333333333333333333333333333"
               }
             ],
-            "dryRunResults": []
+            "dryRunResults": [],
+            "inboxTotal": 1,
+            "inboxCompleted": 1,
+            "inboxFailed": 0,
+            "inboxSkipped": false,
+            "inboxResults": [
+              {
+                "id": "20260924-a1b2c3",
+                "filename": "20260924-112345-a1b2c3-redis-split-brain.md",
+                "title": "Redis Cluster Split Brain Recovery",
+                "durationMs": 12000,
+                "status": "completed",
+                "error": null
+              }
+            ]
           }
         }
       ]

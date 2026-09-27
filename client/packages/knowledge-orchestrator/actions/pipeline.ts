@@ -19,6 +19,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   const interval = input.interval ?? 10;
   const only = input.only ?? null;
   const skipSystemKnowledge = input.skipSystemKnowledge ?? false;
+  const skipInbox = input.skipInbox ?? false;
   const reportFile = input.reportFile ?? "maintenance-report.md";
   const logFile = input.logFile ?? null;
 
@@ -29,6 +30,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     timeout,
     interval,
     skipSystemKnowledge,
+    skipInbox,
     logFile,
   });
 
@@ -111,11 +113,19 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       });
     },
     onProgress: (stats: any) => {
-      ctx.progress.report(
-        stats.processed,
-        stats.total,
-        stats.activeRepo ? `当前活跃仓: ${stats.activeRepo}` : "流水线调度中"
-      );
+      if (stats.activeCandidate) {
+        ctx.progress.report(
+          stats.inboxProcessed ?? 0,
+          stats.inboxTotal ?? 1,
+          `当前待审候选: ${stats.activeCandidate}`
+        );
+      } else {
+        ctx.progress.report(
+          stats.processed,
+          stats.total,
+          stats.activeRepo ? `当前活跃仓: ${stats.activeRepo}` : "流水线调度中"
+        );
+      }
     },
     logFn: (msg: string) => {
       ctx.log.info(msg);
@@ -131,6 +141,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       dryRun,
       only,
       skipSystemKnowledge,
+      skipInbox,
       reportFile,
       logFile,
     },
@@ -146,6 +157,11 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       failed: 0,
       totalElapsedMs: 0,
       results: [],
+      inboxTotal: 0,
+      inboxCompleted: 0,
+      inboxFailed: 0,
+      inboxSkipped: rawResult.inboxSkipped ?? skipInbox,
+      inboxResults: [],
     });
 
     return {
@@ -166,6 +182,11 @@ export default defineAction<Input, Output>(async (input, ctx) => {
         renderedCommand: item.renderedCommand,
         placeholders: item.placeholders,
       })),
+      inboxTotal: 0,
+      inboxCompleted: 0,
+      inboxFailed: 0,
+      inboxSkipped: rawResult.inboxSkipped ?? skipInbox,
+      inboxResults: [],
     };
   }
 
@@ -179,8 +200,17 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     ...(r.message ? { message: r.message } : {}),
   }));
 
+  const inboxResults = (rawResult.inboxResults ?? []).map((c) => ({
+    id: c.id,
+    filename: c.filename,
+    title: c.title,
+    durationMs: c.durationMs,
+    status: c.status,
+    error: c.error ?? null,
+  }));
+
   return {
-    success: rawResult.failed === 0,
+    success: rawResult.failed === 0 && (rawResult.inboxFailed ?? 0) === 0,
     total: rawResult.total,
     completed: rawResult.completed,
     skipped: rawResult.skipped,
@@ -191,5 +221,10 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     logFile: rawResult.logFile ?? null,
     results,
     dryRunResults: [],
+    inboxTotal: rawResult.inboxTotal ?? 0,
+    inboxCompleted: rawResult.inboxCompleted ?? 0,
+    inboxFailed: rawResult.inboxFailed ?? 0,
+    inboxSkipped: rawResult.inboxSkipped ?? skipInbox,
+    inboxResults,
   };
 });

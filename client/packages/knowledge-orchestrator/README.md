@@ -1,6 +1,6 @@
 # actiondock-knowledge-orchestrator
 
-[ActionDock](https://github.com/team4u/actiondock) 本地客户端编排包，专用于知识库自动化批量维护与两阶段流水线调度。
+[ActionDock](https://github.com/team4u/actiondock) 本地客户端编排包，专用于知识库自动化批量维护与三阶段流水线调度。
 
 本包属于本地客户端控制平面，仅在本地宿主机或本地智能体终端运行，绝不打包进云端容器镜像。
 
@@ -13,7 +13,7 @@
 | `knowledge-workspace` | 工作区能力平面 | 云端容器（443 端口） | 为智能体提供工程检索、受控读写与工作区内终端执行 (`search.rg`, `files.read`, `files.list`, `files.write`, `files.edit`, `bash.exec`, `links.verify`) |
 | `knowledge-inbox` | 反馈追加平面 | 云端容器（443 端口） | 收集人工排障与补充候选文档 (`knowledge.collect`, `knowledge.list`, `knowledge.archive`) |
 | `knowledge-maintenance` | 特权原子维护平面 | 云端容器（443 端口） | 双分支代码仓与单分支系统知识仓的同步、待维护扫描、发布与检查点推进 (`maintenance.sync`, `maintenance.list`, `maintenance.publish`, `maintenance.complete`) |
-| `knowledge-orchestrator` | 本地客户端编排平面 | 本地宿主机 / 终端 | 批量扫描、任务模版渲染、外部智能体异步派发、检查点状态轮询与两阶段全局聚合调度 (`orchestrator.pipeline`) |
+| `knowledge-orchestrator` | 本地客户端编排平面 | 本地宿主机 / 终端 | 批量扫描、任务模版渲染、外部智能体异步派发、检查点状态轮询、待审池串行消费与三阶段流水线调度 (`orchestrator.pipeline`) |
 
 ---
 
@@ -23,7 +23,7 @@
 
 - **入口**：`actions/pipeline.ts`
 - **功能**：
-  - 编排并驱动单代码仓巡检与系统知识库全局聚合两阶段流水线。
+  - 编排并驱动单代码仓增量巡检、系统知识库全局聚合与待审池串行消费三阶段流水线。
   - 支持 `dryRun` 预演模式，仅扫描远端变更并渲染派发命令，不实际触发执行。
   - 支持外部智能体命令模版插值（`{{repo}}`、`{{prompt}}`、`{{commitsSummary}}` 等）与安全引号转义。
   - 自动轮询远端检查点推进状态，超时自动终止并生成 Markdown 结算报告。

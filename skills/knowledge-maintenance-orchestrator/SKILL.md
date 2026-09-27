@@ -1,13 +1,13 @@
 ---
 name: knowledge-maintenance-orchestrator
-description: 知识维护总控编排技能，通过本地 ActionDock 驱动两阶段多仓流水线调度（单仓巡检与系统知识库全局聚合），并在微观上驱动单仓全生命周期的代码同步、变更核验、知识编写、断链自愈、统一发布与检查点推进自闭环。
+description: 知识维护总控编排技能，通过本地 ActionDock 驱动三阶段多仓流水线调度（单仓增量巡检、系统知识跨仓聚合与待审池串行消费），并在微观上驱动单仓全生命周期的代码同步、变更核验、知识编写、断链自愈、统一发布与检查点推进自闭环。
 metadata:
   version: 3.0.0
 ---
 
 # 知识维护总控编排
 
-作为知识维护总控编排专家智能体，全面纳管多仓批量流水线调度与单仓自闭环执行。宏观上由本地智能体驱动两阶段多仓流水线（单代码仓巡检与系统知识库全局聚合），微观上由被唤醒的维护智能体严格聚焦指定的单仓或系统知识库，驱动代码同步、变更核验、知识编写、断链自愈、统一发布与检查点推进，实现确定性交付。
+作为知识维护总控编排专家智能体，全面纳管多仓批量流水线调度与单仓自闭环执行。宏观上由本地智能体驱动三阶段多仓流水线（单代码仓增量巡检、系统知识库全局聚合与待审池串行消费），微观上由被唤醒的维护智能体严格聚焦指定的单仓、系统知识库或待审候选文档，驱动代码同步、变更核验、知识编写、断链自愈、统一发布与检查点推进，实现确定性交付。
 
 ---
 
@@ -21,6 +21,7 @@ metadata:
 | **流水线预演检查**<br>仅预览待维护仓库列表与各仓派发命令 | **宏观调度队长**<br>（本地执行机运行） | `ad run orchestrator.pipeline -- profile="skm" dryRun:=true` | [pipeline-scheduling.md](references/pipeline-scheduling.md) |
 | **单仓维护任务派发响应**<br>被流水线唤醒或人工指定针对单个仓库维护 | **微观作业员**<br>（受控会话聚焦单仓） | 依序调用 `sync`、`list`、`links.verify`、`publish`、`complete` | [single-repo-workflow.md](references/single-repo-workflow.md) |
 | **系统知识库全局聚合响应**<br>被流水线第二阶段唤醒执行跨仓主流程聚合 | **系统总控统筹者**<br>（受控会话聚焦系统仓） | 统筹调度子代理调查、呈递方案草案讨论、受控委派写入、发布至 `master` 分支并推进检查点 | [system-knowledge-workflow.md](references/system-knowledge-workflow.md) |
+| **待审经验串行消费响应**<br>被流水线第三阶段唤醒执行候选文档核验 | **待审经验核验员**<br>（受控会话聚焦单候选） | 依序核验源码事实、提炼合入规范目录并调用 `knowledge.archive` 归档 | [pipeline-scheduling.md](references/pipeline-scheduling.md) |
 
 ---
 
@@ -41,6 +42,6 @@ metadata:
 
 不同业务场景下，智能体应调阅 `references/` 目录下的专项分册：
 
-- [pipeline-scheduling.md](references/pipeline-scheduling.md)：**宏观流水线调度与本地观测指南**。当调度多仓两阶段流水线、设置派发模版、配置本地后台守护进程（`nohup`）以及通过 `logFile` 与 `tail -f` 实时流式追溯执行时查阅。
+- [pipeline-scheduling.md](references/pipeline-scheduling.md)：**宏观流水线调度与本地观测指南**。当调度多仓三阶段流水线、设置派发模版、配置本地后台守护进程（`nohup`）以及通过 `logFile` 与 `tail -f` 实时流式追溯执行时查阅。
 - [single-repo-workflow.md](references/single-repo-workflow.md)：**微观单仓全生命周期自闭环规程**。当智能体承接具体的代码仓维护任务，需要执行分支同步、冲突安全消解、变更场景判定、知识文档编写、断链自愈与检查点推进时查阅。
 - [system-knowledge-workflow.md](references/system-knowledge-workflow.md)：**系统知识库多子代理协同与方案先议规程**。当智能体承接系统知识库全局聚合维护任务，需要横向扫描兄弟仓提取客观证据、执行三路决策树判定、呈递《业务域演进方案草案》进行人机讨论、委派专业子代理受控写入、断链自愈与检查点推进时查阅。

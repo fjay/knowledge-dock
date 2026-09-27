@@ -43,9 +43,9 @@ ad list
 
 ---
 
-## 两阶段调度时序与模版引擎
+## 三阶段调度时序与模版引擎
 
-针对企业多微服务架构，集中式长会话容易引发上下文窗口超限或单点阻塞。调度器采用轻量解耦的两阶段拓扑设计：
+针对企业多微服务架构，集中式长会话容易引发上下文窗口超限或单点阻塞。调度器采用轻量解耦的三阶段拓扑设计：
 
 ```mermaid
 sequenceDiagram
@@ -53,11 +53,12 @@ sequenceDiagram
     participant Cloud as 知识服务中枢 (443 端口)
     actor Worker as 单仓维护智能体 (按需唤醒，即用即毁)
     actor SystemWorker as 系统知识维护智能体 (按需唤醒)
+    actor InboxWorker as 待审池评审智能体 (按需唤醒)
 
     Note over Runner,Cloud: 第一阶段：单仓增量巡检
     loop 遍历业务代码仓清单 (repoType: code)
         Runner->>Cloud: 查询检查点与最新提交 (maintenance.list)
-        alt 存在未审提交或待审经验
+        alt 存在未审提交或代码变动
             Runner->>Worker: 渲染模板并派发单仓维护任务 (dispatchCmd)
             Worker->>Cloud: 同步分支、更新文档、核验断链并推进检查点
             Runner->>Cloud: 轮询探测检查点基线推进状态
@@ -76,6 +77,19 @@ sequenceDiagram
         Runner->>Runner: 自动跳过系统知识库聚合维护
     end
 
+    Note over Runner,Cloud: 第三阶段：Knowledge Inbox 全局待审池串行巡检与消费
+    alt skipInbox 为 false
+        Runner->>Cloud: 查询待审池候选列表 (knowledge.list status="pending")
+        loop 遍历待审候选文档清单 (Candidate)
+            Runner->>InboxWorker: 渲染候选模板并逐个串行派发评审任务 (dispatchCmd)
+            InboxWorker->>Cloud: 查验源码事实、提炼合入知识库并归档移出 (knowledge.archive)
+            Runner->>Cloud: 轮询探测当前 candidate.id 是否已移出待审池
+            Runner->>Runner: 记录候选归档或超时结果 (inboxResults)
+        end
+    else skipInbox 为 true
+        Runner->>Runner: 记录跳过待审池阶段
+    end
+
     Runner->>Runner: 生成 maintenance-report.md 结算审计报告
 ```
 
@@ -85,8 +99,8 @@ sequenceDiagram
 
 | 占位符名称 | 数据类型 | 核心作用说明 |
 |---|---|---|
-| `{{repo}}` | 字符串 | 当前代码仓目录名称（如 `order-service`） |
-| `{{path}}` | 字符串 | 当前仓库在服务端工作区的绝对路径（如 `/srv/workspace/order-service`） |
+| `{{repo}}` | 字符串 | 当前代码仓目录名称（如 `order-service`，待审池阶段默认为 `knowledge-inbox`） |
+| `{{path}}` | 字符串 | 当前仓库或候选在服务端工作区的绝对路径（如 `/srv/workspace/order-service`） |
 | `{{branch}}` | 字符串 | 当前仓库的目标分支名（业务代码仓默认为 `release`，系统知识仓默认为 `master`） |
 | `{{repoType}}` | 字符串 | 当前仓库治理类型（`code` 或 `system_knowledge`） |
 | `{{from}}` | 字符串 | 上次检查点记录的代码提交哈希（冷启动建库时为 `initial`） |
@@ -96,7 +110,12 @@ sequenceDiagram
 | `{{diffSummary}}` | 字符串 | 增量代码变动统计摘要文本（如 `12 files changed`） |
 | `{{commitsSummary}}` | 字符串 | 提交日志列表摘要，包含短哈希与提交说明 |
 | `{{codePhaseSummary}}` | 字符串 | 第一阶段所有已完成维护的代码仓变更事实汇总。第一阶段执行时该值为空；在第二阶段系统知识库维护时自动注入，为跨仓端到端主流程聚合提供客观事实输入 |
-| `{{prompt}}` | 字符串 | 开箱即用的工程维护指导语，调度器依据代码仓类型与增量类型动态装配 |
+| `{{candidateId}}` | 字符串 | 当前待审候选文档唯一标识（例如 `20260924-a1b2c3`，代码仓阶段为空字符） |
+| `{{candidateTitle}}` | 字符串 | 当前待审候选文档标题（代码仓阶段为空字符） |
+| `{{candidateFilename}}` | 字符串 | 当前待审候选文档文件名（代码仓阶段为空字符） |
+| `{{candidatePath}}` | 字符串 | 当前待审候选文档工作区相对路径（代码仓阶段为空字符） |
+| `{{candidateDomain}}` | 字符串 | 当前待审候选文档所属业务域（代码仓阶段为空字符） |
+| `{{prompt}}` | 字符串 | 开箱即用的工程维护指导语，调度器依据代码仓、系统知识库或待审候选类型动态装配 |
 
 ### 双重安全引号转义机理
 
@@ -172,6 +191,7 @@ export function escapeQuotes(val: any): string {
 | `dryRun` | 布尔值 | `false` | 预演模式开关。设为 `true` 时仅打印计算变量与渲染后的派发命令，不实际触发任务 |
 | `only` | 字符串 | 空 | 限制仅维护指定的仓库。支持单个仓库名或逗号分隔的仓库列表，如 `only="order-service,payment-service"` |
 | `skipSystemKnowledge` | 布尔值 | `false` | 是否跳过第二阶段的全局系统知识库聚合维护 |
+| `skipInbox` | 布尔值 | `false` | 是否跳过第三阶段的 Knowledge Inbox 待审池串行巡检与消费 |
 | `reportFile` | 字符串 | `maintenance-report.md` | 结算审计报告输出路径，记录各仓库维护结果与耗时指标 |
 | `logFile` | 字符串 | 空 | 结构化运行日志追加写入路径，便于使用 `tail -f` 流式追踪 |
 
@@ -179,28 +199,56 @@ export function escapeQuotes(val: any): string {
 
 ## 控制台实时看板与结算报告
 
-- 控制台实时进度看板：调度器在运行期间会在终端以动态进度条形式刷新当前处理进度，实时显示已处理仓库数、总仓库数以及当前正在活跃轮询的仓库名称：
+- 控制台实时进度看板：调度器在运行期间会在终端以动态进度条形式刷新当前处理进度，实时显示已处理仓库数、总仓库数、待审候选进度条以及当前正在活跃轮询的仓库或候选标识：
   ```text
-  [=========>          ] 50% (2/4) - 当前活跃仓: order-service
+  流水线进度: [=========>          ] 50% (2/4)
+  总仓数: 4 | 已跳过: 1 | 已完成: 2 | 失败: 0
+  当前活跃仓: order-service | 单仓耗时: 01:35 | 总耗时: 03:05
+  待审池进度: [===========>        ] 66% (2/3)
+  待审候选总数: 3 | 已归档: 2 | 失败: 0
+  当前待审候选: 20260924-a1b2c3 (Redis Cluster 脑裂恢复指南) | 单篇耗时: 00:25
   ```
 
-- 结算审计报告（默认保存在 `maintenance-report.md`）：流水线运行结束后在当前工作目录自动生成 Markdown 格式的审计报告，汇总运行指标与各仓库维护结果：
+- 结算审计报告（默认保存在 `maintenance-report.md`）：流水线运行结束后在当前工作目录自动生成 Markdown 格式的审计报告，汇总代码仓与待审池维护结果指标：
 
 ```markdown
-# 知识库维护流水线结算报告
+# 知识维护流水线执行报告
 
-- 远端维护视图: skm
-- 纳管仓库总数: 3
-- 成功闭环数: 2
-- 跳过未变动数: 1
-- 执行失败数: 0
-- 整体总耗时: 185s
+- 执行环境配置：skm
+- 扫描总仓库数：3
+- 维护成功数：2
+- 跳过无需更新数：1
+- 失败或超时数：0
+- 待审候选总数：2
+- 待审成功归档数：2
+- 待审处理失败数：0
+- 流水线总耗时：03:45
 
-## 仓库维护明细
+## 仓库执行明细
 
-| 仓库名称 | 治理类型 | 目标提交 | 执行状态 | 耗时 | 明细说明 |
+- 仓库标识：order-service（业务代码仓）
+  - 远端路径：/srv/workspace/order-service
+  - 执行状态：成功闭环
+  - 目标检查点：8f3a12b...
+  - 耗时：01:35
+  - 说明：检查点已成功推进至 8f3a12b...
+- 仓库标识：cron-service（业务代码仓）
+  - 远端路径：/srv/workspace/cron-service
+  - 执行状态：无需更新
+  - 目标检查点：3c9d44e...
+  - 耗时：00:02
+  - 说明：远端检查点已对齐，无待核验代码变更
+- 仓库标识：system-knowledge（系统知识库）
+  - 远端路径：/srv/workspace/system-knowledge
+  - 执行状态：成功闭环
+  - 目标检查点：5e2a901...
+  - 耗时：01:28
+  - 说明：检查点已成功推进至 5e2a901...
+
+## 待审池处理明细
+
+| 候选标识 | 候选标题 | 文件名 | 状态 | 耗时 | 说明 |
 |---|---|---|---|---|---|
-| order-service | code | 8f3a12b | completed | 95s | 增量核验完成，文档已同步更新并推进检查点 |
-| cron-service | code | 3c9d44e | skipped | 2s | 检查点与 HEAD 一致，无变动跳过 |
-| system-knowledge | system_knowledge | 5e2a901 | completed | 88s | 系统知识库全局聚合完成，已同步跨仓主流程 |
+| 20260924-a1b2c3 | Redis Cluster 脑裂恢复指南 | 20260924-112345-a1b2c3-redis-split-brain.md | 成功归档 | 00:25 | 已完成归档闭环 |
+| 20260924-d4e5f6 | MySQL 连接超时排障指南 | 20260924-112500-d4e5f6-mysql-timeout.md | 成功归档 | 00:15 | 已完成归档闭环 |
 ```

@@ -13,6 +13,7 @@ export interface PipelineOptions {
   dryRun?: boolean;
   only?: string | null;
   skipSystemKnowledge?: boolean;
+  skipInbox?: boolean;
   reportFile?: string | null;
   logFile?: string | null;
   help?: boolean;
@@ -32,6 +33,11 @@ export interface DryRunResult {
   skipped: number;
   pending: number;
   dryRunOutput: DryRunItem[];
+  inboxTotal?: number;
+  inboxCompleted?: number;
+  inboxFailed?: number;
+  inboxSkipped?: boolean;
+  inboxResults?: InboxCandidateResult[];
 }
 
 export interface RepoResult {
@@ -42,6 +48,36 @@ export interface RepoResult {
   targetCommit?: string;
   durationMs: number;
   message: string;
+}
+
+export interface InboxCandidate {
+  id: string;
+  filename: string;
+  path: string;
+  status: string;
+  year?: string;
+  title?: string;
+  domain?: string;
+  tags?: string[];
+  repos?: string[];
+  createdAt?: string;
+}
+
+export interface InboxCandidateResult {
+  id: string;
+  filename: string;
+  title: string;
+  durationMs: number;
+  status: "completed" | "failed";
+  error?: string | null;
+}
+
+export interface InboxPhaseSummary {
+  inboxTotal: number;
+  inboxCompleted: number;
+  inboxFailed: number;
+  inboxSkipped: boolean;
+  inboxResults: InboxCandidateResult[];
 }
 
 export interface PipelineSummary {
@@ -57,6 +93,11 @@ export interface PipelineSummary {
   logFile?: string | null;
   dryRun?: false;
   success?: boolean;
+  inboxTotal?: number;
+  inboxCompleted?: number;
+  inboxFailed?: number;
+  inboxSkipped?: boolean;
+  inboxResults?: InboxCandidateResult[];
 }
 
 export interface PipelineHooks {
@@ -80,6 +121,7 @@ export function parseArgs(argv: string[] = []): Required<PipelineOptions> {
     dryRun: false,
     only: null,
     skipSystemKnowledge: false,
+    skipInbox: false,
     reportFile: "maintenance-report.md",
     logFile: null,
     help: false,
@@ -117,6 +159,10 @@ export function parseArgs(argv: string[] = []): Required<PipelineOptions> {
       options.only = arg.slice("--only=".length);
     } else if (arg === "--skip-system-knowledge") {
       options.skipSystemKnowledge = true;
+    } else if (arg === "--skip-inbox") {
+      options.skipInbox = true;
+    } else if (arg.startsWith("--skip-inbox=")) {
+      options.skipInbox = arg.slice("--skip-inbox=".length) !== "false";
     } else if (arg === "--report-file") {
       options.reportFile = argv[++i] ?? options.reportFile;
     } else if (arg.startsWith("--report-file=")) {
@@ -179,15 +225,43 @@ export function renderDashboard(stats: {
   activeRepo?: string;
   activeRepoElapsed?: number;
   totalElapsed: number;
+  inboxTotal?: number;
+  inboxProcessed?: number;
+  inboxCompleted?: number;
+  inboxFailed?: number;
+  inboxSkipped?: boolean;
+  activeCandidate?: string;
+  activeCandidateElapsed?: number;
 }): string {
   const progressBar = renderProgressBar(stats.processed, stats.total);
   const lines = [
     `流水线进度: ${progressBar}`,
     `总仓数: ${stats.total} | 已跳过: ${stats.skipped} | 已完成: ${stats.completed} | 失败: ${stats.failed}`,
-    stats.activeRepo
-      ? `当前活跃仓: ${stats.activeRepo} | 单仓耗时: ${formatDuration(stats.activeRepoElapsed ?? 0)} | 总耗时: ${formatDuration(stats.totalElapsed)}`
-      : `总耗时: ${formatDuration(stats.totalElapsed)}`,
   ];
+
+  if (stats.activeRepo) {
+    lines.push(
+      `当前活跃仓: ${stats.activeRepo} | 单仓耗时: ${formatDuration(stats.activeRepoElapsed ?? 0)} | 总耗时: ${formatDuration(stats.totalElapsed)}`
+    );
+  } else {
+    lines.push(`总耗时: ${formatDuration(stats.totalElapsed)}`);
+  }
+
+  if (stats.inboxTotal !== undefined && stats.inboxTotal > 0) {
+    const inboxBar = renderProgressBar(stats.inboxProcessed ?? 0, stats.inboxTotal);
+    lines.push(`待审池进度: ${inboxBar}`);
+    lines.push(
+      `待审候选总数: ${stats.inboxTotal} | 已归档: ${stats.inboxCompleted ?? 0} | 失败: ${stats.inboxFailed ?? 0}`
+    );
+    if (stats.activeCandidate) {
+      lines.push(
+        `当前待审候选: ${stats.activeCandidate} | 单篇耗时: ${formatDuration(stats.activeCandidateElapsed ?? 0)}`
+      );
+    }
+  } else if (stats.inboxSkipped) {
+    lines.push(`待审池阶段: 已跳过`);
+  }
+
   return lines.join("\n");
 }
 
@@ -424,11 +498,111 @@ export function buildSystemKnowledgePrompt(data: any): string {
 }
 
 /**
+ * 构造针对待审池单个候选文档的标准评审与沉淀指导语
+ */
+export function buildInboxCandidatePrompt(candidate: any = {}): string {
+  const id = candidate.id || candidate.candidateId || "";
+  const filename = candidate.filename || candidate.candidateFilename || "";
+  const title = candidate.title || candidate.candidateTitle || filename || id;
+  const candidatePath =
+    candidate.path ||
+    candidate.candidatePath ||
+    (filename ? `/srv/knowledge-inbox/pending/${filename}` : "/srv/knowledge-inbox/pending");
+  const domain = candidate.domain || candidate.candidateDomain || "未分类";
+  const repos =
+    Array.isArray(candidate.repos) && candidate.repos.length > 0
+      ? candidate.repos.join(", ")
+      : "全局/未关联指定代码仓";
+  const tags =
+    Array.isArray(candidate.tags) && candidate.tags.length > 0
+      ? candidate.tags.join(", ")
+      : "无标签";
+  const createdAt = candidate.createdAt || "未知";
+
+  const lines = [
+    `# 排障经验待审池候选评审指导`,
+    ``,
+    `请针对待审候选文档「${title}」（标识：${id}）执行审查提炼与归档留痕闭环。`,
+    ``,
+    `## 任务背景与元数据`,
+    ``,
+    `- 候选标识：${id}`,
+    `- 候选标题：${title}`,
+    `- 候选文件名：${filename}`,
+    `- 文件绝对路径：${candidatePath}`,
+    `- 业务领域：${domain}`,
+    `- 关联仓库：${repos}`,
+    `- 标签：${tags}`,
+    `- 收集时间：${createdAt}`,
+    ``,
+    `## 技能规范与参考`,
+    ``,
+    `请挂载并严格遵循 skills/knowledge-maintenance-orchestrator/SKILL.md 与 skills/project-knowledge-maintainer 技能规范。`,
+    ``,
+    `## 审查提炼与核验闭环流程`,
+    ``,
+    `- 直读候选内容：调阅待审文件完整内容并核验技术细节与客观事实：`,
+    `  - ad run workspace/files.read --profile skm -- path="${candidatePath}" startLine:=1 maxLines:=2000`,
+    `- 四路决议判定准则：`,
+    `  - 采纳并沉淀（accepted）：经验具有通用排障或架构指导价值。需将有效知识融入对应代码仓或系统知识仓的 runbook 或对应分类文档中；`,
+    `  - 重复条目（duplicate）：已有正式知识库文档完全覆盖该场景，无需重复沉淀；`,
+    `  - 证据不足（insufficient_evidence）：缺乏关键诊断日志、复现步骤或核心事实，无法指导排障；`,
+    `  - 驳回废弃（rejected）：方案错误、时效过旧已淘汰或不符合技术规范。`,
+    `- 采纳沉淀时的质量门禁：`,
+    `  - 涉及知识库修改时，严格收敛在 docs/knowledge/ 目录或系统知识库对应领域目录；`,
+    `  - 完成编辑后必须执行断链校验：ad run workspace/links.verify --profile skm -- path="<目标工作区绝对路径>"；`,
+    `  - 若有断链必须就地修复至零断链；`,
+    `  - 提交并发布：ad run maintenance/maintenance.publish --profile skm -- path="<目标工作区绝对路径>" message="docs: incorporate inbox candidate ${id}"；`,
+    `- 最终归档交付（绝对交付标志）：`,
+    `  - 审查结束后必须显式调用归档动作，将候选文档原子移入处理归档目录：`,
+    `  - 归档动作调用：ad run knowledge.archive --profile skm -- id="${id}" resolution="<accepted|duplicate|insufficient_evidence|rejected>" note="<归档审理说明>"`,
+    `  - 归档成功将自动移出 pending 待审目录，完成单篇候选闭环。`,
+  ];
+
+  return lines.join("\n");
+}
+
+/**
+ * 从待审候选条目抽取全量模版占位符
+ */
+export function buildInboxPlaceholders(candidate: any = {}, extraContext: any = {}): Record<string, any> {
+  const id = candidate.id || candidate.candidateId || "";
+  const filename = candidate.filename || candidate.candidateFilename || "";
+  const title = candidate.title || candidate.candidateTitle || filename || id;
+  const candidatePath =
+    candidate.path ||
+    candidate.candidatePath ||
+    (filename ? `/srv/knowledge-inbox/pending/${filename}` : "/srv/knowledge-inbox/pending");
+  const domain = candidate.domain || candidate.candidateDomain || "未分类";
+  const repos = Array.isArray(candidate.repos) ? candidate.repos : [];
+  const prompt = buildInboxCandidatePrompt(candidate);
+
+  return {
+    candidateId: id,
+    candidateTitle: title,
+    candidateFilename: filename,
+    candidatePath,
+    candidateDomain: domain,
+    id,
+    title,
+    filename,
+    path: candidatePath,
+    repo: repos[0] || "knowledge-inbox",
+    repos: repos.join(", "),
+    prompt,
+    ...extraContext,
+  };
+}
+
+/**
  * 构造统一维护指导语模版，根据仓库类型自动分流
  */
 export function buildPrompt(data: any): string {
   if (data?.repoType === "system_knowledge") {
     return buildSystemKnowledgePrompt(data);
+  }
+  if (data?.repoType === "inbox" || data?.candidateId) {
+    return buildInboxCandidatePrompt(data);
   }
   return buildCodeRepoPrompt(data);
 }
@@ -509,6 +683,9 @@ export function buildPlaceholders(item: any = {}, extraContext: any = {}): Recor
     commitsSummary,
     codePhaseSummary,
     prompt,
+    candidateId: "",
+    candidateTitle: "",
+    candidateFilename: "",
   };
 }
 
@@ -591,6 +768,23 @@ export async function queryRemoteList(profile: string = "skm", repoPath: string 
 }
 
 /**
+ * 查询待审池候选列表
+ */
+export async function queryRemoteInboxList(
+  profile: string = "skm",
+  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
+): Promise<any[]> {
+  const cmd = `ad run knowledge.list --profile ${profile} --json -- status="pending"`;
+  const { stdout } = await execFn(cmd);
+  const parsed = JSON.parse(stdout);
+  if (parsed.ok === false && parsed.error) {
+    throw new Error(parsed.error.message || `ActionDock 错误: ${parsed.error.code}`);
+  }
+  const data = parsed.data ?? parsed;
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+/**
  * 异步触发派发命令（非阻塞启动外部智能体）
  */
 export function triggerDispatch(command: string, { timeoutMs = 1500, execFn = null }: { timeoutMs?: number; execFn?: ((cmd: string) => any) | null } = {}): Promise<any> {
@@ -652,6 +846,11 @@ export function generateMarkdownReport(reportData: {
   failed?: number;
   totalElapsedMs?: number;
   results?: RepoResult[];
+  inboxTotal?: number;
+  inboxCompleted?: number;
+  inboxFailed?: number;
+  inboxSkipped?: boolean;
+  inboxResults?: InboxCandidateResult[];
 } = {}): string {
   const {
     profile = "skm",
@@ -661,6 +860,11 @@ export function generateMarkdownReport(reportData: {
     failed = 0,
     totalElapsedMs = 0,
     results = [],
+    inboxTotal = 0,
+    inboxCompleted = 0,
+    inboxFailed = 0,
+    inboxSkipped = false,
+    inboxResults = [],
   } = reportData;
 
   const totalDurationStr = formatDuration(totalElapsedMs);
@@ -671,6 +875,12 @@ export function generateMarkdownReport(reportData: {
   md += `- 维护成功数：${completed}\n`;
   md += `- 跳过无需更新数：${skipped}\n`;
   md += `- 失败或超时数：${failed}\n`;
+  md += `- 待审候选总数：${inboxTotal}\n`;
+  md += `- 待审成功归档数：${inboxCompleted}\n`;
+  md += `- 待审处理失败数：${inboxFailed}\n`;
+  if (inboxSkipped) {
+    md += `- 待审池状态：已跳过\n`;
+  }
   md += `- 流水线总耗时：${totalDurationStr}\n\n`;
   md += `## 仓库执行明细\n\n`;
 
@@ -699,6 +909,25 @@ export function generateMarkdownReport(reportData: {
     }
   }
 
+  md += `\n## 待审池处理明细\n\n`;
+  if (inboxSkipped) {
+    md += `- 待审池阶段已按配置跳过巡检\n`;
+  } else if (inboxResults.length === 0) {
+    md += `- 待审池无待处理候选文档\n`;
+  } else {
+    md += `| 候选标识 | 候选标题 | 文件名 | 状态 | 耗时 | 说明 |\n`;
+    md += `|---|---|---|---|---|---|\n`;
+    for (const item of inboxResults) {
+      const statusText = item.status === "completed" ? "成功归档" : "处理失败";
+      const durationStr = formatDuration(item.durationMs || 0);
+      const note = item.status === "completed" ? "已完成归档闭环" : (item.error || "处理失败");
+      const safeTitle = (item.title || "").replace(/\|/g, "\\|");
+      const safeFilename = (item.filename || "").replace(/\|/g, "\\|");
+      const safeNote = (note || "").replace(/\|/g, "\\|");
+      md += `| ${item.id} | ${safeTitle} | ${safeFilename} | ${statusText} | ${durationStr} | ${safeNote} |\n`;
+    }
+  }
+
   return md;
 }
 
@@ -719,6 +948,7 @@ export function printHelp(): void {
   --dry-run                预演模式，仅扫描远端变更并打印渲染后的派发命令，不实际触发与轮询
   --only <repos>           仅处理指定的单个或几个仓库 (逗号分隔，如 "order-service,cron-service")
   --skip-system-knowledge  跳过系统知识库第二阶段全局维护 (默认: false)
+  --skip-inbox             跳过第三阶段 Knowledge Inbox 待审池巡检消费 (默认: false)
   --report-file <path>     最终 Markdown 结算报告输出路径 (默认: "maintenance-report.md")
   --log-file <path>        实时日志流追加路径 (支持 tail -f 实时观测)
   -h, --help               显示帮助信息与命令模版占位符列表
@@ -735,7 +965,10 @@ export function printHelp(): void {
   {{diffSummary}}          文件变动统计摘要文本
   {{commitsSummary}}       格式化的提交日志摘要文本
   {{codePhaseSummary}}     前序已完成巡检的代码仓摘要与变更清单
-  {{prompt}}               开箱即用的专业维护指导语模版 (代码仓或系统知识库自动适配)
+  {{prompt}}               开箱即用的专业维护指导语模版 (代码仓、系统知识库或待审候选自动适配)
+  {{candidateId}}          当前待审候选文档标识 (例如 "20260924-a1b2c3")
+  {{candidateTitle}}       当前待审候选文档标题
+  {{candidateFilename}}    当前待审候选文档文件名
 
 调用范例：
   - 本地 Action 派发：
@@ -751,7 +984,211 @@ export function printHelp(): void {
 }
 
 /**
- * 核心调度流水线（支持单仓代码巡检与系统知识库全局聚合两阶段调度）
+ * 第三阶段：Knowledge Inbox 全局待审池串行巡检与消费
+ */
+export async function runInboxPhase(
+  options: PipelineOptions,
+  hooks: PipelineHooks = {},
+  extraContext: {
+    startTime?: number;
+    codeReposCount?: number;
+    systemReposCount?: number;
+    writeLog?: (msg: string) => void;
+  } = {}
+): Promise<InboxPhaseSummary> {
+  const {
+    execFn = defaultExec,
+    dispatchFn = null,
+    sleepFn = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
+    onProgress = null,
+    nowFn = Date.now,
+  } = hooks;
+
+  const profile = options.profile || "skm";
+  const timeoutVal = options.timeout ?? 15;
+  const intervalVal = options.interval ?? 10;
+  const timeoutMs = timeoutVal * 60 * 1000;
+  const intervalMs = intervalVal * 1000;
+  const startTime = extraContext.startTime ?? nowFn();
+  const writeLog = extraContext.writeLog ?? (() => {});
+
+  // 1. 若配置跳过待审池，直接结算跳过
+  if (options.skipInbox) {
+    writeLog("[PHASE3] skipInbox 为 true，跳过 Knowledge Inbox 待审池阶段");
+    return {
+      inboxTotal: 0,
+      inboxCompleted: 0,
+      inboxFailed: 0,
+      inboxSkipped: true,
+      inboxResults: [],
+    };
+  }
+
+  // 2. 执行查询：调用 knowledge.list (status="pending") 获取待审候选列表
+  writeLog("正在扫描 Knowledge Inbox 待审池候选列表...");
+  let pendingItems: any[] = [];
+  try {
+    pendingItems = await queryRemoteInboxList(profile, execFn);
+  } catch (err: any) {
+    writeLog(`[ERROR] 查询待审池候选列表失败: ${err.message}`);
+    return {
+      inboxTotal: 0,
+      inboxCompleted: 0,
+      inboxFailed: 0,
+      inboxSkipped: false,
+      inboxResults: [],
+    };
+  }
+
+  const inboxTotal = pendingItems.length;
+  writeLog(`待审池扫描完成，发现待审候选共 ${inboxTotal} 篇`);
+
+  // 3. 若无待审候选，直接跳过并结算
+  if (inboxTotal === 0) {
+    writeLog("[PHASE3] 待审池为空，无待处理候选文档，直接结算完成");
+    return {
+      inboxTotal: 0,
+      inboxCompleted: 0,
+      inboxFailed: 0,
+      inboxSkipped: false,
+      inboxResults: [],
+    };
+  }
+
+  const inboxResults: InboxCandidateResult[] = [];
+  let inboxCompleted = 0;
+  let inboxFailed = 0;
+
+  // 4. 串行循环派发：逐个候选唤醒 Agent 处理并轮询探测移出 pending
+  for (let i = 0; i < pendingItems.length; i++) {
+    const candidate = pendingItems[i];
+    const candidateId = candidate.id || "";
+    const candidateTitle = candidate.title || candidate.filename || candidateId;
+    const candidateFilename = candidate.filename || "";
+    const candidateStartTime = nowFn();
+
+    const reportProgress = () => {
+      const activeCandidateElapsed = nowFn() - candidateStartTime;
+      const totalElapsed = nowFn() - startTime;
+      const stats = {
+        total: (extraContext.codeReposCount ?? 0) + (extraContext.systemReposCount ?? 0),
+        processed: (extraContext.codeReposCount ?? 0) + (extraContext.systemReposCount ?? 0),
+        skipped: 0,
+        completed: (extraContext.codeReposCount ?? 0) + (extraContext.systemReposCount ?? 0),
+        failed: 0,
+        totalElapsed,
+        inboxTotal,
+        inboxProcessed: inboxCompleted + inboxFailed,
+        inboxCompleted,
+        inboxFailed,
+        inboxSkipped: false,
+        activeCandidate: `${candidateId} (${candidateTitle})`,
+        activeCandidateElapsed,
+      };
+      if (onProgress) {
+        onProgress(stats);
+      }
+    };
+
+    reportProgress();
+
+    // 组装指导语模版与占位符并渲染派发命令
+    const placeholders = buildInboxPlaceholders(candidate);
+    const renderedCmd = options.dispatchCmd
+      ? renderTemplate(options.dispatchCmd, placeholders, { escapeQuotes: true })
+      : "";
+
+    writeLog(`[DISPATCH] 派发待审候选任务 (${i + 1}/${inboxTotal}) -> ID: ${candidateId}, 标题: ${candidateTitle}`);
+
+    try {
+      if (dispatchFn) {
+        await dispatchFn(renderedCmd, placeholders);
+      } else if (renderedCmd) {
+        await triggerDispatch(renderedCmd);
+      }
+    } catch (err: any) {
+      inboxFailed++;
+      const durationMs = nowFn() - candidateStartTime;
+      writeLog(`[ERROR] 待审候选 ${candidateId} 派发异常: ${err.message}`);
+      inboxResults.push({
+        id: candidateId,
+        filename: candidateFilename,
+        title: candidateTitle,
+        durationMs,
+        status: "failed",
+        error: `派发执行异常: ${err.message}`,
+      });
+      continue;
+    }
+
+    // 轮询探测：定期调用 knowledge.list(status: "pending")，检查当前 candidate.id 是否已移出待审池
+    let isArchived = false;
+    let isTimedOut = false;
+
+    while (!isArchived && !isTimedOut) {
+      reportProgress();
+      await sleepFn(intervalMs);
+
+      const elapsed = nowFn() - candidateStartTime;
+      if (elapsed >= timeoutMs) {
+        isTimedOut = true;
+        break;
+      }
+
+      try {
+        const currentPending = await queryRemoteInboxList(profile, execFn);
+        const stillPending = currentPending.some(
+          (item: any) => item.id === candidateId || item.filename === candidateFilename
+        );
+        if (!stillPending) {
+          isArchived = true;
+          break;
+        }
+      } catch {
+        // 网络抖动不中断轮询，持续等待至超时
+      }
+    }
+
+    const durationMs = nowFn() - candidateStartTime;
+
+    if (isArchived) {
+      inboxCompleted++;
+      writeLog(`[SUCCESS] 待审候选 ${candidateId} 归档成功 (耗时: ${formatDuration(durationMs)})`);
+      inboxResults.push({
+        id: candidateId,
+        filename: candidateFilename,
+        title: candidateTitle,
+        durationMs,
+        status: "completed",
+        error: null,
+      });
+    } else {
+      inboxFailed++;
+      writeLog(`[TIMEOUT] 待审候选 ${candidateId} 归档超时 (${timeoutVal} 分钟)`);
+      inboxResults.push({
+        id: candidateId,
+        filename: candidateFilename,
+        title: candidateTitle,
+        durationMs,
+        status: "failed",
+        error: `等待候选归档超时 (${timeoutVal} 分钟)，未检测到移出待审池`,
+      });
+    }
+  }
+
+  writeLog(`[PHASE3] Knowledge Inbox 待审池巡检消费完毕：总数 ${inboxTotal} 篇，成功归档 ${inboxCompleted} 篇，失败 ${inboxFailed} 篇`);
+
+  return {
+    inboxTotal,
+    inboxCompleted,
+    inboxFailed,
+    inboxSkipped: false,
+    inboxResults,
+  };
+}
+
+/**
+ * 核心调度流水线（支持单仓代码巡检、系统知识库全局聚合与待审池巡检三阶段调度）
  */
 export async function runPipeline(
   options: PipelineOptions,
@@ -907,6 +1344,11 @@ export async function runPipeline(
       skipped: skippedCount,
       pending: dryRunOutput.length,
       dryRunOutput,
+      inboxTotal: 0,
+      inboxCompleted: 0,
+      inboxFailed: 0,
+      inboxSkipped: options.skipInbox ?? false,
+      inboxResults: [],
     };
   }
 
@@ -1112,8 +1554,19 @@ export async function runPipeline(
     }
   }
 
+  // 10. 第三阶段：Knowledge Inbox 全局待审池串行巡检与消费
+  writeLog(`[PHASE3] 开始第三阶段：Knowledge Inbox 全局待审池巡检与消费`);
+  const inboxSummary = await runInboxPhase(options, hooks, {
+    startTime,
+    codeReposCount: codeRepos.length,
+    systemReposCount: systemRepos.length,
+    writeLog,
+  });
+
   const totalElapsedMs = nowFn() - startTime;
-  writeLog(`[SUMMARY] 流水线执行完毕：总计 ${orderedRepos.length} 个，完成 ${completedCount} 个，跳过 ${skippedCount} 个，失败 ${failedCount} 个，总耗时 ${formatDuration(totalElapsedMs)}`);
+  writeLog(
+    `[SUMMARY] 流水线执行完毕：仓库总计 ${orderedRepos.length} 个（完成 ${completedCount}，跳过 ${skippedCount}，失败 ${failedCount}），待审池候选总计 ${inboxSummary.inboxTotal} 篇（归档 ${inboxSummary.inboxCompleted}，失败 ${inboxSummary.inboxFailed}），总耗时 ${formatDuration(totalElapsedMs)}`
+  );
 
   const summary = {
     profile,
@@ -1124,7 +1577,12 @@ export async function runPipeline(
     totalElapsedMs,
     results,
     logFile: options.logFile ?? null,
-    success: failedCount === 0,
+    success: failedCount === 0 && inboxSummary.inboxFailed === 0,
+    inboxTotal: inboxSummary.inboxTotal,
+    inboxCompleted: inboxSummary.inboxCompleted,
+    inboxFailed: inboxSummary.inboxFailed,
+    inboxSkipped: inboxSummary.inboxSkipped,
+    inboxResults: inboxSummary.inboxResults,
   };
 
   const mdReport = generateMarkdownReport(summary);

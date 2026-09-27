@@ -4,8 +4,8 @@
 
 ## 规程背景与目标
 
-- 核心定位：本地客户端控制平面负责批量多仓两阶段调度，通过内部远程查询与异步派发驱动云端原子维护能力。
-- 核心原则：Git 仓库作为正式知识的唯一事实源，检查点推进作为绝对交付标志，两阶段严格按拓扑顺序执行。
+- 核心定位：本地客户端控制平面负责批量多仓三阶段调度，通过内部远程查询与异步派发驱动云端原子维护能力。
+- 核心原则：Git 仓库作为正式知识的唯一事实源，检查点推进作为绝对交付标志，三阶段严格按拓扑顺序执行。
 - 物理边界隔离：流水线调度器（`orchestrator.pipeline`）属于本地控制平面动作，必须在本地宿主机或本地智能体终端执行，绝不打包进云端容器镜像。
 
 ## 前置环境准备与配置
@@ -14,16 +14,17 @@
 - 远端维护视图配置：本地客户端配置中心已登记远端特权维护视图配置 `skm`。
 - 远端仓库清单确认：远端工作区目录存在受纳管代码仓与系统知识仓。
 
-## 标准两阶段调度全景
+## 标准三阶段调度全景
 
-流水线严格遵循两阶段顺序调度，确保依赖事实完备：
+流水线严格遵循三阶段顺序调度，确保依赖事实完备：
 
 - 第一阶段：单代码仓分支同步与变更核验。依次遍历各业务代码仓，核验代码变更，派发维护智能体进行文档有效性分析与闭环推进。
 - 第二阶段：系统知识库全局跨仓聚合核验。在所有代码仓完成核验后，汇总前序代码仓的更新事实，触发系统知识库的新领域识别与跨仓端到端流程聚合。若前序代码仓均无变更且系统知识库基线已对齐，自动跳过系统层维护。
+- 第三阶段：排障经验待审池串行核验与消费。拉取全局待审候选文档清单，单实例串行派发维护智能体进行交叉事实核验与知识提炼，轮询待审池移出状态直至消费闭环。
 
 ## 流水线动作编排与调用
 
-通过 `orchestrator.pipeline` 一键触发两阶段全自动流水线。
+通过 `orchestrator.pipeline` 一键触发三阶段全自动流水线。
 
 **重要说明**：
 `orchestrator.pipeline` 是本地 Action，在本地宿主机或本地智能体终端执行，**命令行绝对不带** `--profile skm` **控制选项**！
@@ -36,8 +37,8 @@
     ad run orchestrator.pipeline -- profile="skm" dryRun:=true
     ```
 - 正式流水线执行：
-  - 配置外部智能体派发命令模版，启动异步轮询与两阶段闭环驱动。
-  - 派发参数模版：支持 `{{repo}}`、`{{path}}`、`{{branch}}`、`{{from}}`、`{{to}}`、`{{commitCount}}`、`{{changedFilesCount}}`、`{{diffSummary}}`、`{{commitsSummary}}`、`{{codePhaseSummary}}` 与 `{{prompt}}` 占位符。
+  - 配置外部智能体派发命令模版，启动异步轮询与三阶段闭环驱动。
+  - 派发参数模版：支持 `{{repo}}`、`{{path}}`、`{{branch}}`、`{{from}}`、`{{to}}`、`{{commitCount}}`、`{{changedFilesCount}}`、`{{diffSummary}}`、`{{commitsSummary}}`、`{{codePhaseSummary}}`、`{{candidateId}}`、`{{candidateTitle}}`、`{{candidateFilename}}`、`{{candidatePath}}`、`{{candidateDomain}}` 与 `{{prompt}}` 占位符。
   - 调用示例（配合日志文件落盘）：
     ```bash
     ad run orchestrator.pipeline -- profile="skm" logFile="/var/log/knowledge-pipeline.log" dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"' timeout:=15 interval:=10
@@ -53,6 +54,12 @@
   - 调用示例：
     ```bash
     ad run orchestrator.pipeline -- profile="skm" skipSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
+    ```
+- 跳过待审池消费：
+  - 使用 `skipInbox` 参数跳过待审池候选文档消费阶段。
+  - 调用示例：
+    ```bash
+    ad run orchestrator.pipeline -- profile="skm" skipInbox:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
     ```
 
 ## 实时执行日志观测与流式追踪

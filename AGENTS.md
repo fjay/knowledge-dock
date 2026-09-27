@@ -11,7 +11,7 @@
     - `server/Dockerfile` 与 `docker-compose.yml`：一体化容器构建与编排配置。
     - `server/entrypoint.sh`：容器启动自举脚本，负责全局环境配置、包路由自动软链与单端口多视图 HTTP 服务前台启动。
   - 客户端平面（`client/`）：
-    - `client/packages/knowledge-orchestrator`：本地客户端编排平面能力包，包含两阶段流水线调度、命令模板安全渲染与检查点探测。
+    - `client/packages/knowledge-orchestrator`：本地客户端编排平面能力包，包含三阶段流水线调度、命令模板安全渲染、检查点探测与待审池串行消费。
   - 智能体技能资产（`skills/`）：
     - `skills/project-knowledge-maintainer`：配套知识维护智能体技能规范与参考模板。
     - `skills/knowledge-maintenance-orchestrator`：知识维护总控编排技能，负责分支同步、差异扫描、子智能体调度与全流程闭环推进。
