@@ -41,7 +41,7 @@ flowchart TD
     end
 
     subgraph SkillsAsset ["智能体技能资产 (工程规范指南)"]
-        ReaderSkill["vpal-system-knowledge<br/>(Reader / Troubleshooter 只读排障)"]
+        ContributorSkill["knowledge-contributor<br/>(Contributor 知识贡献入池)"]
         MaintainerSkill["project-knowledge-maintainer<br/>(Writer / Maintainer 维护转正)"]
     end
 
@@ -63,7 +63,7 @@ flowchart TD
 
 - 服务端事实平面（`server/`）：一体化运行于 Docker 容器中，基于 ActionDock 单端口多视图规范统一收敛至标准 443 端口。作为全局代码镜像与正式知识库的权威事实源，专注于提供纯粹、轻量、无状态的原子能力（双分支同步、增量扫描、检查点推进、代码检索、受控编辑与待审池收集），对外仅暴露受控的 Action 动作，不承担任何上层编排调度逻辑；
 - 编排控制平面（`client/packages/knowledge-orchestrator`）：轻量批处理流水线调度器，在当前执行机环境中运行，命令行无需附加控制选项 `--profile`。专注于多代码仓按清单巡检、比对增量差异、组装安全命令模板、派发智能体任务、探测状态并结算审计报告，可灵活适配本地开发机、独立运维调度机或 CI/CD 自动化流水线等多种执行拓扑；
-- 智能体技能资产（`skills/`）：提供标准操作规程资产，指导智能体执行代码分支同步、差异核验、受控文档编辑、断链校验与检查点推进。
+- 智能体技能资产（`skills/`）：提供标准操作规程资产，包含面向一线开发与运营人员的知识贡献助手（`skills/knowledge-contributor`）、面向代码变更与维护转正的知识中枢（`skills/project-knowledge-maintainer`）以及负责批量多仓巡检的总控编排技能（`skills/knowledge-maintenance-orchestrator`）。
 
 ---
 
@@ -136,7 +136,8 @@ ad run workspace/search.rg --profile sk -- pattern="MK40001"
 - 全景架构设计指南：自动维护与反馈闭环实践、物理分层设计手记与检查点基线哲学，参见 [docs/architecture.md](docs/architecture.md)；
 - 部署与交付实战指南：容器部署、环境变量、纳管仓库清单配置与安全基线，参见 [docs/deployment.md](docs/deployment.md)；
 - 流水线编排实战指南：两阶段流水线调度、命令模板安全渲染与审计报告结算，参见 [docs/orchestration.md](docs/orchestration.md)；
-- 知识全生命周期运维规程：待审池 Candidate Markdown 语义规范、失效判定准则与质量门禁，参见 [docs/operations.md](docs/operations.md)。
+- 知识全生命周期运维规程：待审池 Candidate Markdown 语义规范、失效判定准则与质量门禁，参见 [docs/operations.md](docs/operations.md)；
+- 知识贡献技能规程：面向开发与运营的知识捕获、语义模板与待审池安全投递，参见 [skills/knowledge-contributor/SKILL.md](skills/knowledge-contributor/SKILL.md)。
 
 ---
 
