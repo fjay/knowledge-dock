@@ -44,11 +44,11 @@ Knowledge Inbox 是所有外部知识进入正式知识库前的审核缓冲区�
 
 其文件结构由两部分构成：
 
-> **YAML Frontmatter 元数据 + 固定语义标记节（Semantic Sections）**
+> **YAML Frontmatter 元数据 + 固定语义标记节**
 
-### 生产排障候选模板（troubleshooting）
+### 生产排障候选模板
 
-适用于一线人员在排查线上故障、日志告警或异常客诉后提炼的实战经验：
+适用于一线人员在排查线上故障、日志告警或异常客诉后提炼的实战经验（对应字段 `contribution_type: troubleshooting`）：
 
 ```markdown
 ---
@@ -90,9 +90,9 @@ tags:
 - `<!-- section:unknowns -->`：必须保留的未确认信息，如尚未明确的边界条件或缺乏对端源码求证的事项；
 - `<!-- section:maintainer -->`：维护智能体或人工审查人员在提炼转正时的处理记录。
 
-### 日常维护候选模板（maintenance）
+### 日常维护候选模板
 
-适用于依据最新设计方案、跨系统对齐会议或人工补充业务事实的场景：
+适用于依据最新设计方案、跨系统对齐会议或人工补充业务事实的场景（对应字段 `contribution_type: maintenance`）：
 
 ```markdown
 ---

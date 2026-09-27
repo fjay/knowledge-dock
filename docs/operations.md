@@ -52,11 +52,11 @@ Knowledge Inbox 是所有人工知识进入正式知识库前的统一受控写�
 
 Knowledge Inbox 采用 Markdown 格式持久化于待审池中，核心规范定义为：
 
-> **YAML Frontmatter + 固定语义标记节（Semantic Sections）**
+> **YAML Frontmatter + 固定语义标记节**
 
 系统为两类输入分别规定了标准语义标记节。
 
-#### 生产排障候选模板（troubleshooting）
+#### 生产排障候选模板
 
 ```markdown
 ---
@@ -88,7 +88,7 @@ tags:
 ## Maintainer 处理记录
 ```
 
-#### 日常维护候选模板（maintenance）
+#### 日常维护候选模板
 
 ```markdown
 ---
