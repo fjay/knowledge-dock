@@ -1,54 +1,56 @@
-# 本地流水线编排实战指南
+# 流水线编排实战指南
 
 ---
 
-## 调度器的本质与边界铁律
+## 调度编排与原子能力的执行机制
 
-在执行流水线编排调度前，必须在架构认知上厘清调度器的运行边界：
+在执行流水线编排调度前，需明确调度器与底层原子能力的运行机制与职责边界：
 
-- 纯本地执行属性：流水线调度器（`orchestrator.pipeline`）属于客户端控制平面的纯本地动作，必须在本地终端或宿主执行机上执行，严禁且无需部署至云端容器内；
-- 边界铁律：**命令行严禁附加控制选项** `--profile`；
-- 底层失败机理深度剖析：在终端调用 ActionDock 时，若在双短横线（`--`）之前附加了控制选项 `--profile skm`（例如错误编写为 `ad run orchestrator.pipeline --profile skm -- ...`），ActionDock 命令行工具会将当前指定的 Action 动作连同其本地依赖打包，通过网络发往云端 443 服务端执行。云端容器既未安装调度器的执行依赖，亦无法在容器内部反向调度客户端宿主机上的外部智能体，最终导致调度失控与服务进程崩溃；
-- 严格区分控制选项与数据入参：参数 `profile="skm"` 仅作为内部数据入参在双短横线（`--`）之后传入，指示调度器向远端哪个视图查询检查点基线。由于其默认值即为 `skm`，常规调用时直接缺省即可。
+- 编排控制器的运行机制：流水线调度器（`orchestrator.pipeline`）属于客户端控制平面的编排主控动作，运行在当前执行机（如本地开发机、独立运维调度机或 CI/CD 自动化流水线）的前台或后台环境中，负责按清单巡检多代码仓、比对增量、组装安全命令模板、派发智能体任务并结算审计报告；
+- 控制选项与数据入参的语义区别：
+  - ActionDock 命令行语法中，在双短横线（`--`）之前附加的 `--profile <name>` 属于框架级全局控制选项。其语义是将当前指定的 Action 动作连同其依赖打包，通过网络发送至对应 Profile 所在的目标服务中执行；
+  - 调度器本身即为主控发起者，在当前执行机环境中运行即可，无需也不应当将调度器自身打包转发至远端服务；
+  - 在双短横线（`--`）之后传入的参数（如 `profile="skm"`）属于 Action 动作的数据入参，用于指示调度器内部的查询动作连接哪一个特权维护视图以获取检查点基线水位与最新提交哈希。该参数默认值即为 `skm`，常规调用时直接缺省即可；
+- 任务派发与环境隔离：需要向目标服务或远端智能体派发执行任务时，通过在 `dispatchCmd` 命令模板中显式指定目标 Profile（例如 `dispatchCmd='ad run my-agent.dispatch --profile skm -- ...'`）完成跨环境调用，实现调度编排与执行环境的完全解耦。
 
-正确与错误调用范式对比：
+调用范式对比：
 
 ```bash
-# 正确调用范例 (命令行无 --profile 控制选项，入参在 -- 之后传递)
+# 正确调用范例（调度器在当前执行机运行，无需全局控制选项，数据入参在双短横线之后传递）
 ad run orchestrator.pipeline -- dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"'
 
-# 绝对禁止的错误调用反例 (切勿在双短横线之前添加 --profile 控制选项)
-# ad run orchestrator.pipeline --profile skm -- dispatchCmd='...'  <-- 严禁添加控制选项
+# 错误调用范例（切勿在双短横线之前使用全局控制选项打包转发调度器自身）
+# ad run orchestrator.pipeline --profile skm -- dispatchCmd='...'
 ```
 
 ---
 
-## 本地编排包链接与挂载
+## 编排包链接与挂载
 
-首次在客户端执行机运行流水线前，需将本地编排包软链注册至全局路由表：
+首次在执行机运行流水线前，需将编排包软链注册至全局路由表：
 
 ```bash
 ad link client/packages/knowledge-orchestrator
 ```
 
-注册完成后，通过列表命令确认本地已成功挂载 `orchestrator.pipeline` 动作：
+注册完成后，通过列表命令确认已成功挂载 `orchestrator.pipeline` 动作：
 
 ```bash
 ad list
 ```
 
-控制台输出中包含 `orchestrator.pipeline` 即表明本地控制平面就绪。
+控制台输出中包含 `orchestrator.pipeline` 即表明控制平面就绪。
 
 ---
 
 ## 两阶段调度时序与模版引擎
 
-针对企业多微服务架构，集中式的超长会话极易因上下文超限或单点阻塞导致整条流水线崩溃。调度器采用两阶段拓扑设计：
+针对企业多微服务架构，集中式长会话容易引发上下文窗口超限或单点阻塞。调度器采用轻量解耦的两阶段拓扑设计：
 
 ```mermaid
 sequenceDiagram
-    actor Runner as 本地调度器 (orchestrator.pipeline)
-    participant Cloud as 云端中枢 (443 端口)
+    actor Runner as 调度器 (orchestrator.pipeline)
+    participant Cloud as 知识服务中枢 (443 端口)
     actor Worker as 单仓维护智能体 (按需唤醒，即用即毁)
     actor SystemWorker as 系统知识维护智能体 (按需唤醒)
 
@@ -117,12 +119,12 @@ export function escapeQuotes(val: any): string {
 
 ---
 
-## 四种标准运维范式
+## 标准运维范式
 
-根据不同执行阶段与应用场景，推荐以下四种标准运维范式：
+根据不同执行阶段与应用场景，推荐以下标准运维范式：
 
-- 本地单次前台执行：
-  直接在本地终端前台运行，控制台输出实时看板与轮询状态，适用于日常开发调试与即时手动触发：
+- 单次前台执行：
+  直接在终端前台运行，控制台输出实时看板与轮询状态，适用于日常调试与即时手动触发：
   ```bash
   ad run orchestrator.pipeline -- \
     dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"'
@@ -182,7 +184,7 @@ export function escapeQuotes(val: any): string {
   [=========>          ] 50% (2/4) - 当前活跃仓: order-service
   ```
 
-- 结算审计报告（默认保存在 `maintenance-report.md`）：流水线运行结束后在本地自动生成 Markdown 格式的审计报告，汇总运行指标与各仓库维护结果：
+- 结算审计报告（默认保存在 `maintenance-report.md`）：流水线运行结束后在当前工作目录自动生成 Markdown 格式的审计报告，汇总运行指标与各仓库维护结果：
 
 ```markdown
 # 知识库维护流水线结算报告

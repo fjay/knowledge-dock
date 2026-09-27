@@ -26,7 +26,7 @@ knowledge-dock 建立了清晰的分层控制与协作模型：
 
 ```mermaid
 flowchart TD
-    subgraph ClientPlane ["客户端编排平面 (纯本地执行，无大模型开销)"]
+    subgraph ClientPlane ["编排控制平面 (轻量流水线调度，无大模型开销)"]
         CLI["ad 命令行 / crontab 定时调度"]
         Orchestrator["knowledge-orchestrator<br/>(增量扫描代码变动，按需唤醒智能体)"]
         LocalAgent["维护智能体实例 (即用即毁)"]
@@ -46,7 +46,7 @@ flowchart TD
     end
 
     CLI --> Orchestrator
-    Orchestrator -->|"向云端查询检查点基线与最新提交"| Router
+    Orchestrator -->|"向服务端查询检查点基线与最新提交"| Router
     Orchestrator -->|"发现有效增量，按需唤醒智能体"| LocalAgent
     LocalAgent -.->|"遵循标准操作规程"| MaintainerSkill
     LocalAgent -->|"携带特权令牌执行维护动作"| Router
@@ -61,8 +61,8 @@ flowchart TD
 
 系统由三大核心平面构成：
 
-- 服务端事实平面（`server/`）：一体化运行于 Docker 容器中，基于 ActionDock 单端口多视图规范统一收敛至标准 443 端口。作为全局代码镜像与正式知识库的权威事实源，对外仅暴露受控的 Action 动作，不承担任何调度逻辑；
-- 本地客户端编排平面（`client/packages/knowledge-orchestrator`）：纯本地轻量批处理调度器，在本地执行机运行，命令行严禁附加控制选项 `--profile`。负责增量差异探测、命令模板渲染、异步派发智能体任务与审计报告结算；
+- 服务端事实平面（`server/`）：一体化运行于 Docker 容器中，基于 ActionDock 单端口多视图规范统一收敛至标准 443 端口。作为全局代码镜像与正式知识库的权威事实源，专注于提供纯粹、轻量、无状态的原子能力（双分支同步、增量扫描、检查点推进、代码检索、受控编辑与待审池收集），对外仅暴露受控的 Action 动作，不承担任何上层编排调度逻辑；
+- 编排控制平面（`client/packages/knowledge-orchestrator`）：轻量批处理流水线调度器，在当前执行机环境中运行，命令行无需附加控制选项 `--profile`。专注于多代码仓按清单巡检、比对增量差异、组装安全命令模板、派发智能体任务、探测状态并结算审计报告，可灵活适配本地开发机、独立运维调度机或 CI/CD 自动化流水线等多种执行拓扑；
 - 智能体技能资产（`skills/`）：提供标准操作规程资产，指导智能体执行代码分支同步、差异核验、受控文档编辑、断链校验与检查点推进。
 
 ---
@@ -111,13 +111,13 @@ docker compose up -d --build
 
 ### 客户端配置与极速检索
 
-在本地执行机注册只读查询配置与特权维护配置：
+在执行机注册只读查询配置与特权维护配置：
 
 ```bash
 # 注册面向日常查询与排障助手的只读查询配置
 ad profile add sk -s https://<云端服务地址>:443 -t <ACTIONDOCK_TOKEN> -k -d "知识中枢只读查询服务"
 
-# 注册面向维护智能体与本地调度器的特权维护配置
+# 注册面向维护智能体与流水线调度器的特权维护配置
 ad profile add skm -s https://<云端服务地址>:443 -t <ACTIONDOCK_AGENT_TOKEN> -k -d "知识中枢特权维护服务"
 ```
 
@@ -131,11 +131,11 @@ ad run workspace/search.rg --profile sk -- pattern="MK40001"
 
 ## 深入探索
 
-关于架构设计演进、系统部署交付、本地流水线调度与日常知识运维的深度规程，请参阅：
+关于架构设计演进、系统部署交付、流水线编排调度与日常知识运维的深度规程，请参阅：
 
 - 全景架构设计指南：自动维护与反馈闭环实践、物理分层设计手记与检查点基线哲学，参见 [docs/architecture.md](docs/architecture.md)；
 - 部署与交付实战指南：容器部署、环境变量、纳管仓库清单配置与安全基线，参见 [docs/deployment.md](docs/deployment.md)；
-- 本地流水线编排实战指南：两阶段流水线调度、命令模板安全渲染与审计报告结算，参见 [docs/orchestration.md](docs/orchestration.md)；
+- 流水线编排实战指南：两阶段流水线调度、命令模板安全渲染与审计报告结算，参见 [docs/orchestration.md](docs/orchestration.md)；
 - 知识全生命周期运维规程：待审池 Candidate Markdown 语义规范、失效判定准则与质量门禁，参见 [docs/operations.md](docs/operations.md)。
 
 ---
