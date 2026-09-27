@@ -1,11 +1,11 @@
 .git
 node_modules
-packages/*/node_modules
-.env
-packages/*/tests
-docs
+server/packages/*/node_modules
+server/packages/*/tests
+client
 skills
+docs
 certs
 *.log
 maintenance-report.md
-packages/knowledge-orchestrator
+.env

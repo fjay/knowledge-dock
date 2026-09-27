@@ -1,8 +1,40 @@
-# knowledge-server
+# knowledge-dock
 
-为 AI 智能体与研发团队打造的自维护工程知识中枢。
+为 AI 智能体与研发团队打造的自维护工程知识中枢与编排工作空间。
 
-knowledge-server 是基于 ActionDock 构建的工程知识服务容器。通过代码变更自动驱动文档更新，将线上排障经验收集入待审池，统一由云端对外提供已同步的最新代码与知识检索。
+knowledge-dock 是基于 ActionDock 规范构建的一体化云知识服务容器与智能体编排工作空间。通过代码变更自动驱动文档更新，将线上排障经验收集入待审池，统一由云端对外提供已同步的最新代码与知识检索，并在本地提供轻量高效的多仓流水线调度编排。
+
+---
+
+## 物理分层架构
+
+本项目采用清晰的物理分层 Monorepo 架构，将服务端知识中枢、本地客户端编排与智能体技能资产彻底解耦：
+
+```mermaid
+flowchart TD
+    subgraph ClientPlane ["client/ 客户端平面 (本地宿主机 / 终端)"]
+        Orchestrator["knowledge-orchestrator<br/>两阶段流水线调度 / 检查点探测 / 任务派发"]
+    end
+
+    subgraph SkillsPlane ["skills/ 智能体技能资产 (提示词规范与工作流)"]
+        SkillMaintainer["project-knowledge-maintainer<br/>单仓知识维护标准规程"]
+        SkillOrchestrator["knowledge-maintenance-orchestrator<br/>多仓维护总控编排规程"]
+    end
+
+    subgraph ServerPlane ["server/ 服务端平面 (云端 443 原生单端口多视图)"]
+        Workspace["knowledge-workspace<br/>工作区检索 / 读写 / 编辑 / 终端执行 / 断链校验"]
+        Inbox["knowledge-inbox<br/>排障经验收集 / 待审池管理 / 结构化归档"]
+        Maintenance["knowledge-maintenance<br/>双分支同步 / 差异扫描 / 检查点推进 / 发布"]
+    end
+
+    ClientPlane -->|"状态扫描与检查点轮询"| ServerPlane
+    ClientPlane -->|"指导语渲染与任务派发"| SkillsPlane
+    SkillsPlane -->|"特权动作调用与维护闭环"| ServerPlane
+```
+
+- **服务端平面**（`server/`）：包含 `knowledge-workspace`（工作区检索与读写）、`knowledge-inbox`（反馈待审池收集）与 `knowledge-maintenance`（特权同步与检查点推进），通过单端口多视图统一在 443 端口对外提供服务。
+- **客户端平面**（`client/`）：包含 `knowledge-orchestrator`（本地流水线调度器），负责两阶段扫描、命令渲染、异步派发与检查点探测。
+- **智能体技能资产**（`skills/`）：包含 `project-knowledge-maintainer` 与 `knowledge-maintenance-orchestrator`，提供经过工程验证的自闭环维护指导语与编排模板。
 
 ---
 

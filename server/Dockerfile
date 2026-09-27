@@ -1,4 +1,4 @@
-# knowledge-server
+# knowledge-dock
 # 云主机 Dockerfile - 知识库自动维护与反馈闭环服务端
 # ==============================================================================
 FROM node:25-bookworm-slim
@@ -29,15 +29,15 @@ RUN npm config set strict-ssl false && \
 WORKDIR /app
 
 COPY package*.json ./
-COPY packages ./packages
+COPY server/packages ./server/packages
 
 # 安装工作空间生产依赖（内网自签证书源，显式关闭 TLS 校验，不依赖全局配置）
 RUN npm install --omit=dev --strict-ssl=false && npm cache clean --force
 
 # 链接本地 packages 至 ActionDock 全局路由
-RUN ad link /app/packages/knowledge-workspace && \
-    ad link /app/packages/knowledge-inbox && \
-    ad link /app/packages/knowledge-maintenance
+RUN ad link /app/server/packages/knowledge-workspace && \
+    ad link /app/server/packages/knowledge-inbox && \
+    ad link /app/server/packages/knowledge-maintenance
 
 # 创建标准挂载目录与日志目录
 RUN mkdir -p /srv/workspace /srv/knowledge-inbox /etc/actiondock /var/log/actiondock
@@ -53,7 +53,7 @@ ENV NODE_ENV=production \
 EXPOSE 443
 
 # 拷贝容器启动入口
-COPY entrypoint.sh /entrypoint.sh
+COPY server/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 WORKDIR /srv

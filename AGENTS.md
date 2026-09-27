@@ -1,16 +1,20 @@
-# Agent 开发协作指引 - knowledge-server
+# Agent 开发协作指引 - knowledge-dock
 
-- **核心定位**：knowledge-server 是基于 ActionDock 规范构建的云主机一体化知识服务容器分发，基于原生单端口多视图（Virtual Views）模式统一收敛至 443 端口：面向外部查询用户提供只读检索与受控追加视图，面向维护智能体提供具备完整读写与维护能力的受控视图，仅通过鉴权令牌自动隔离权限。
+- **核心定位**：knowledge-dock 是基于 ActionDock 规范构建的云知识服务与智能体编排工作空间。服务端基于原生单端口多视图（Virtual Views）模式统一收敛至 443 端口：面向外部查询用户提供只读检索与受控追加视图，面向维护智能体提供具备完整读写与维护能力的受控视图，仅通过鉴权令牌自动隔离权限；客户端提供轻量流水线调度与多仓知识维护闭环。
 - **运行时与技术栈**：Node.js（版本大于等于 24.12.0）、Docker、Docker Compose、Git 与 ripgrep。
 - **代码库分层结构**：
-  - `packages/knowledge-workspace`：工作区能力包，提供基于 ripgrep 的工程代码与文档全文检索、受控文件分段直读、目录浏览、安全写入、受控编辑、原生终端命令执行与断链校验。
-  - `packages/knowledge-inbox`：反馈追加平面能力包，负责收集人工排障与日常运维产生的结构化候选文档并写入待审池。
-  - `packages/knowledge-maintenance`：特权维护平面能力包，包含双分支代码同步、差异扫描、文档发布提交与检查点推进动作。
-  - `config/repos.json.example`：多代码仓与系统知识仓清单配置模板。
-  - `skills/project-knowledge-maintainer`：配套知识维护智能体技能规范与参考模板。
-  - `skills/knowledge-maintenance-orchestrator`：知识维护总控编排技能，负责分支同步、差异扫描、子智能体调度与全流程闭环推进。
-  - `Dockerfile` 与 `docker-compose.yml`：一体化容器构建与编排配置。
-  - `entrypoint.sh`：容器启动自举脚本，负责全局环境配置、包路由自动软链与单端口多视图 HTTP 服务前台启动。
+  - 服务端平面（`server/`）：
+    - `server/packages/knowledge-workspace`：工作区能力包，提供基于 ripgrep 的工程代码与文档全文检索、受控文件分段直读、目录浏览、安全写入、受控编辑、原生终端命令执行与断链校验。
+    - `server/packages/knowledge-inbox`：反馈追加平面能力包，负责收集人工排障与日常运维产生的结构化候选文档并写入待审池。
+    - `server/packages/knowledge-maintenance`：特权维护平面能力包，包含双分支代码同步、差异扫描、文档发布提交与检查点推进动作。
+    - `server/config/repos.json.example`：多代码仓与系统知识仓清单配置模板。
+    - `server/Dockerfile` 与 `docker-compose.yml`：一体化容器构建与编排配置。
+    - `server/entrypoint.sh`：容器启动自举脚本，负责全局环境配置、包路由自动软链与单端口多视图 HTTP 服务前台启动。
+  - 客户端平面（`client/`）：
+    - `client/packages/knowledge-orchestrator`：本地客户端编排平面能力包，包含两阶段流水线调度、命令模板安全渲染与检查点探测。
+  - 智能体技能资产（`skills/`）：
+    - `skills/project-knowledge-maintainer`：配套知识维护智能体技能规范与参考模板。
+    - `skills/knowledge-maintenance-orchestrator`：知识维护总控编排技能，负责分支同步、差异扫描、子智能体调度与全流程闭环推进。
 - **常用验证与构建命令**：
   - 执行子包单元测试：进入对应子包目录执行 `npm test`。
   - 执行类型检查：进入对应子包目录执行 `npm run typecheck`。

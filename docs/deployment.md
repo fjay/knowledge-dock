@@ -4,7 +4,7 @@
 
 ## 概述
 
-knowledge-server 是基于 ActionDock 规范构建的一体化知识服务容器。统一在 443 原生 HTTPS 端口运行，通过 Bearer Token 自动隔离查询视图（只读检索与候选投递）与维护视图（代码同步、编辑与检查点推进）。
+knowledge-dock 是基于 ActionDock 规范构建的一体化知识服务容器。统一在 443 原生 HTTPS 端口运行，通过 Bearer Token 自动隔离查询视图（只读检索与候选投递）与维护视图（代码同步、编辑与检查点推进）。
 
 ---
 

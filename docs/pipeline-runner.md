@@ -75,6 +75,14 @@ flowchart TD
 `orchestrator.pipeline` 是本地 Action，在宿主机或本地智能体终端执行，**命令行绝对不带** `--profile skm` **控制选项**！
 `profile="skm"` 仅仅作为数据入参在双短横线（`--`）后传给内部远程查询。
 
+### 本地编排包软链注册
+
+在执行流水线调度前，确保已将客户端平面编排包软链注册至本地 ActionDock：
+
+```bash
+ad link client/packages/knowledge-orchestrator
+```
+
 ### ActionDock 异步动作派发与日志落盘
 
 ```bash

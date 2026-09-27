@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# entrypoint.sh - knowledge-server 容器启动脚本
+# entrypoint.sh - knowledge-dock 容器启动脚本
 # ==============================================================================
 set -e
 
@@ -28,10 +28,10 @@ if [ -n "${GIT_AUTHOR_EMAIL}" ]; then
 fi
 
 # 确保 Monorepo packages 已链接到 ActionDock 全局路由 (幂等保障，失败时告警不阻断启动)
-if [ -d "/app/packages" ]; then
-    ad link /app/packages/knowledge-workspace >/dev/null 2>&1 || echo "[WARN] ad link knowledge-workspace failed, falling back to build-time registry" >&2
-    ad link /app/packages/knowledge-inbox >/dev/null 2>&1 || echo "[WARN] ad link knowledge-inbox failed, falling back to build-time registry" >&2
-    ad link /app/packages/knowledge-maintenance >/dev/null 2>&1 || echo "[WARN] ad link knowledge-maintenance failed, falling back to build-time registry" >&2
+if [ -d "/app/server/packages" ]; then
+    ad link /app/server/packages/knowledge-workspace >/dev/null 2>&1 || echo "[WARN] ad link knowledge-workspace failed, falling back to build-time registry" >&2
+    ad link /app/server/packages/knowledge-inbox >/dev/null 2>&1 || echo "[WARN] ad link knowledge-inbox failed, falling back to build-time registry" >&2
+    ad link /app/server/packages/knowledge-maintenance >/dev/null 2>&1 || echo "[WARN] ad link knowledge-maintenance failed, falling back to build-time registry" >&2
 fi
 
 # 3. 如果通过 docker run / docker exec 传入了自定义命令，则直接执行该命令

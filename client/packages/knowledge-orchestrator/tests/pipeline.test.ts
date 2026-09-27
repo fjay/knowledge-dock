@@ -307,15 +307,15 @@ describe("orchestrator.pipeline", () => {
   });
 
   it("服务端物理隔离校验：entrypoint.sh 仅链接三大核心服务包，绝不链接 orchestrator 包", () => {
-    const entrypointPath = path.resolve(__dirname, "../../../entrypoint.sh");
+    const entrypointPath = path.resolve(__dirname, "../../../../server/entrypoint.sh");
     assert.ok(fs.existsSync(entrypointPath), "entrypoint.sh 必须存在");
 
     const content = fs.readFileSync(entrypointPath, "utf8");
 
     // 验证链接命令只包含三大服务包
-    assert.ok(content.includes("ad link /app/packages/knowledge-workspace"));
-    assert.ok(content.includes("ad link /app/packages/knowledge-inbox"));
-    assert.ok(content.includes("ad link /app/packages/knowledge-maintenance"));
+    assert.ok(content.includes("ad link /app/server/packages/knowledge-workspace"));
+    assert.ok(content.includes("ad link /app/server/packages/knowledge-inbox"));
+    assert.ok(content.includes("ad link /app/server/packages/knowledge-maintenance"));
     assert.ok(!content.includes("knowledge-orchestrator"), "entrypoint.sh 严禁链接 knowledge-orchestrator");
 
     // 提取 skm 视图配置代码块

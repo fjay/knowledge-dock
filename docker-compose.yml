@@ -2,7 +2,7 @@ services:
   knowledge-server:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: server/Dockerfile
     image: knowledge-server:latest
     container_name: knowledge-server
     restart: unless-stopped
@@ -18,7 +18,7 @@ services:
       - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-Knowledge Maintainer}
       - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-maintainer@actiondock.local}
     volumes:
-      - ./entrypoint.sh:/entrypoint.sh:ro
+      - ./server/entrypoint.sh:/entrypoint.sh:ro
       # ActionDock 运行时状态库 (包含检查点 checkpoints 与运行状态，必须持久化以防容器重启丢失)
       - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/state:/root/.actiondock
       # 代码工程工作区 (统一基于 KNOWLEDGE_DATA_DIR 自动衍生，不给单独自定义)
@@ -28,7 +28,7 @@ services:
       # 宿主机 SSH 密钥 (用于向 Git 代码仓免密拉取与推送)
       - ${SSH_DIR:-/root/.ssh}:/root/.ssh:ro
       # 仓库清单配置文件目录 (包含 repos.json)
-      - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/config:/etc/actiondock
+      - ./server/config:/etc/actiondock
       # 可选的正式 TLS 证书目录 (cert.pem 和 key.pem)
       - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/certs:/etc/actiondock/certs:ro
       # 维护与系统日志目录
