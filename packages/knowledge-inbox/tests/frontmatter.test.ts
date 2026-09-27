@@ -168,30 +168,22 @@ Body content`;
   it("normalizeRepos deduplicates repos and handles array and legacy frontmatter fallback", () => {
     // 1. Frontmatter repos array
     assert.deepEqual(
-      normalizeRepos(undefined, undefined, ["order-service", "payment-service"], undefined),
+      normalizeRepos(["order-service", "payment-service"], undefined),
       ["order-service", "payment-service"]
     );
     // 2. Legacy single repo string frontmatter
-    assert.deepEqual(
-      normalizeRepos(undefined, undefined, undefined, "order-service"),
-      ["order-service"]
-    );
+    assert.deepEqual(normalizeRepos(undefined, "order-service"), ["order-service"]);
     // 3. Legacy comma-separated repo string frontmatter
     assert.deepEqual(
-      normalizeRepos(undefined, undefined, undefined, "order-service, payment-service"),
+      normalizeRepos(undefined, "order-service, payment-service"),
       ["order-service", "payment-service"]
     );
     // 4. Combined frontmatter repos and legacy repo deduplicated
     assert.deepEqual(
-      normalizeRepos(undefined, undefined, ["order-service"], "order-service, payment-service"),
+      normalizeRepos(["order-service"], "order-service, payment-service"),
       ["order-service", "payment-service"]
     );
-    // 5. Input repos takes precedence over frontmatter if provided
-    assert.deepEqual(
-      normalizeRepos(["new-service"], undefined, ["old-repo"], "legacy-repo"),
-      ["new-service"]
-    );
-    // 6. No repos returns empty array
-    assert.deepEqual(normalizeRepos(undefined, undefined, undefined, undefined), []);
+    // 5. No repos returns empty array
+    assert.deepEqual(normalizeRepos(undefined, undefined), []);
   });
 });

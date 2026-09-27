@@ -175,4 +175,69 @@ describe("maintenance.publish", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("uses GIT_AUTHOR_NAME and GIT_AUTHOR_EMAIL from config when committing", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "publish-env-"));
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      let commitEnv: Record<string, string> | undefined;
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", "git@github.com:org/order-service.git\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd.startsWith("branch -a")) {
+          handle.emitOutput("stdout", "release\ndocs\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "status --porcelain") {
+          handle.emitOutput("stdout", " M docs/knowledge/overview.md\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --abbrev-ref HEAD") {
+          handle.emitOutput("stdout", "docs\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "add -A") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "diff --cached --name-only") {
+          handle.emitOutput("stdout", "docs/knowledge/overview.md\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd.startsWith("commit -m")) {
+          commitEnv = spec.env?.set;
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse HEAD") {
+          handle.emitOutput("stdout", "commit1234567890123456789012345678901234\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "push origin docs") {
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        config: {
+          GIT_AUTHOR_NAME: "DevOps Bot",
+          GIT_AUTHOR_EMAIL: "devops@example.com",
+        },
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(publishAction, {
+        path: tmpDir,
+      });
+
+      assert.equal(res.status, "success");
+      assert.equal(res.committed, true);
+      assert.equal(commitEnv?.GIT_AUTHOR_NAME, "DevOps Bot");
+      assert.equal(commitEnv?.GIT_AUTHOR_EMAIL, "devops@example.com");
+      assert.equal(commitEnv?.GIT_COMMITTER_NAME, "DevOps Bot");
+      assert.equal(commitEnv?.GIT_COMMITTER_EMAIL, "devops@example.com");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

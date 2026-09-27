@@ -24,7 +24,7 @@ flowchart LR
     S4 --> S5["发布与推进 (publish / complete)"]
 ```
 
-- **分支同步**：拉取主干生产分支合并至文档分支。代码冲突无条件以生产分支为准自动提交；文档冲突保留冲突标记供语义消解。
+- **分支同步**：拉取主干生产分支合并至文档分支。检测到合并冲突即安全中止合并并返回冲突清单，由智能体介入消解后重新同步。
 - **变更扫描**：比对上一次检查点水位与当前最新提交。若无新增提交则直接结束，避免无效消耗。
 - **受控编辑**：审查代码差异是否影响架构契约或核心规则。需修改时，优先使用局部编辑打补丁，杜绝大文本重写导致的上下文截断。
 - **断链校验**：文档修改后，扫描 Markdown 相对链接与标题锚点，就地修复失效链接。
@@ -157,14 +157,14 @@ ad describe maintenance/maintenance.sync --profile skm
 ad run knowledge/knowledge.list --profile skm
 
 # 提炼后将经验文件归档
-ad run knowledge/knowledge.archive --profile skm -- id="2026-09-26-order-timeout.json" resolution="accepted" note="已归入 payment 手册"
+ad run knowledge/knowledge.archive --profile skm -- id="20260926-a1b2c3" resolution="accepted" note="已归入 payment 手册"
 ```
 
 ---
 
 ## 编排技能对接
 
-在自动化工作流中，挂载配套技能 [skills/knowledge-maintenance-orchestrator/SKILL.md](file:///root/code/knowledge-server/skills/knowledge-maintenance-orchestrator/SKILL.md) 唤醒智能体：
+在自动化工作流中，挂载配套技能 [skills/knowledge-maintenance-orchestrator/SKILL.md](../skills/knowledge-maintenance-orchestrator/SKILL.md) 唤醒智能体：
 
 ```text
 请激活 【knowledge-maintenance-orchestrator】 技能，针对指定的单一仓库执行一轮知识维护闭环。

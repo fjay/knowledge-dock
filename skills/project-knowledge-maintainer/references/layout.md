@@ -18,10 +18,10 @@ docs/knowledge/
 └── runbook/                    # 排障、配置与操作
 ```
 
-1. 类别目录固定为 `flow`、`module`、`rule`、`interface`、`data`、`runbook` 六个，小写单数。禁止复数（`flows/`、`interfaces/`、`modules/`、`rules/`、`runbooks/`），禁止自创类别（`adapter/`、`core/`、`channel/`、`bill/`、`framework/` 等）。业务域差异体现在 topic 与索引中，不体现在目录结构上。
-2. `index.md` 与 `overview.md` 固定在知识根目录，各只有一份。禁止 `overview/` 目录及 `overview/system-overview.md`、`overview/overview-system.md` 这类变体。
-3. 每个类别目录内只放该 kind 的 Markdown 文档，不设例外；DDL 材料不进仓库层，统一存系统层（见"DDL 与多生产库"）。
-4. 知识根目录固定为 `docs/knowledge/`；用户明确指定其他根目录时，内部结构仍按本规范。
+- 类别目录固定为 `flow`、`module`、`rule`、`interface`、`data`、`runbook` 六个，小写单数。禁止复数（`flows/`、`interfaces/`、`modules/`、`rules/`、`runbooks/`），禁止自创类别（`adapter/`、`core/`、`channel/`、`bill/`、`framework/` 等）。业务域差异体现在 topic 与索引中，不体现在目录结构上。
+- `index.md` 与 `overview.md` 固定在知识根目录，各只有一份。禁止 `overview/` 目录及 `overview/system-overview.md`、`overview/overview-system.md` 这类变体。
+- 每个类别目录内只放该 kind 的 Markdown 文档，不设例外；DDL 材料不进仓库层，统一存系统层（见"DDL 与多生产库"）。
+- 知识根目录固定为 `docs/knowledge/`；用户明确指定其他根目录时，内部结构仍按本规范。
 
 ## 文件命名
 
@@ -88,10 +88,10 @@ system-knowledge/
 
 初始化或重建的完成标准：
 
-1. `index.md`、`overview.md` 与六个类别目录全部存在。
-2. 每个类别目录至少一篇实质文档（frontmatter 完整、正文有真实调查内容，不是占位骨架）。
-3. 确无对象的类别（如纯工具库无持久化数据时省略 `data/`）必须同时满足两个条件：在 `index.md` 已知缺口处写明省略与依据；在完成报告类别清单中列出。以"内容少、不重要、时间不够"为由省略一律不允许——内容少就写一篇小的实质文档。
-4. 完成报告附类别清单：类别 × 文档数 × 状态（完成 / 显式省略及依据）。
+- `index.md`、`overview.md` 与六个类别目录全部存在。
+- 每个类别目录至少一篇实质文档（frontmatter 完整、正文有真实调查内容，不是占位骨架）。
+- 确无对象的类别（如纯工具库无持久化数据时省略 `data/`）必须同时满足两个条件：在 `index.md` 已知缺口处写明省略与依据；在完成报告类别清单中列出。以"内容少、不重要、时间不够"为由省略一律不允许——内容少就写一篇小的实质文档。
+- 完成报告附类别清单：类别 × 文档数 × 状态（完成 / 显式省略及依据）。
 
 ## 存量库迁移
 

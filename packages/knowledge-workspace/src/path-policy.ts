@@ -14,6 +14,16 @@ export interface ResolvedPath {
   stat?: fs.Stats;
 }
 
+/**
+ * 判断从基准目录出发的 relative 结果是否仍位于基准目录内部。
+ */
+export function isRelativeInside(rel: string): boolean {
+  return (
+    rel === "" ||
+    (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+  );
+}
+
 export class WorkspacePathPolicy {
   readonly root: string;
   readonly realRoot: string;
@@ -40,13 +50,7 @@ export class WorkspacePathPolicy {
 
     // Path boundary check using path.relative (Section 21)
     const relFromRoot = path.relative(this.root, candidateAbsolute);
-    const inside =
-      relFromRoot === "" ||
-      (relFromRoot !== ".." &&
-        !relFromRoot.startsWith(`..${path.sep}`) &&
-        !path.isAbsolute(relFromRoot));
-
-    if (!inside) {
+    if (!isRelativeInside(relFromRoot)) {
       throw new WorkspaceError(
         `Path resolves outside workspace root: ${candidatePath}`,
         "PATH_OUTSIDE_WORKSPACE",
@@ -81,12 +85,7 @@ export class WorkspacePathPolicy {
             const linkTarget = fs.readlinkSync(candidateAbsolute);
             const resolvedTarget = path.resolve(path.dirname(candidateAbsolute), linkTarget);
             const relTarget = path.relative(this.realRoot, resolvedTarget);
-            const inside =
-              relTarget === "" ||
-              (relTarget !== ".." &&
-                !relTarget.startsWith(`..${path.sep}`) &&
-                !path.isAbsolute(relTarget));
-            if (!inside) {
+            if (!isRelativeInside(relTarget)) {
               throw new WorkspaceError(
                 `Symlink target resolves outside workspace root: ${candidatePath}`,
                 "SYMLINK_OUTSIDE_WORKSPACE",
@@ -108,13 +107,7 @@ export class WorkspacePathPolicy {
         if (fs.existsSync(checkDir)) {
           const realAncestor = fs.realpathSync(checkDir);
           const relFromRealRoot = path.relative(this.realRoot, realAncestor);
-          const realInside =
-            relFromRealRoot === "" ||
-            (relFromRealRoot !== ".." &&
-              !relFromRealRoot.startsWith(`..${path.sep}`) &&
-              !path.isAbsolute(relFromRealRoot));
-
-          if (!realInside) {
+          if (!isRelativeInside(relFromRealRoot)) {
             throw new WorkspaceError(
               `Symlink target resolves outside workspace root: ${candidatePath}`,
               "SYMLINK_OUTSIDE_WORKSPACE",
@@ -150,13 +143,7 @@ export class WorkspacePathPolicy {
     // Realpath verification for symlink policy (Section 22)
     const realCandidate = fs.realpathSync(candidateAbsolute);
     const relFromRealRoot = path.relative(this.realRoot, realCandidate);
-    const realInside =
-      relFromRealRoot === "" ||
-      (relFromRealRoot !== ".." &&
-        !relFromRealRoot.startsWith(`..${path.sep}`) &&
-        !path.isAbsolute(relFromRealRoot));
-
-    if (!realInside) {
+    if (!isRelativeInside(relFromRealRoot)) {
       throw new WorkspaceError(
         `Symlink target resolves outside workspace root: ${candidatePath}`,
         "SYMLINK_OUTSIDE_WORKSPACE",

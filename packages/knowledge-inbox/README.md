@@ -1,8 +1,8 @@
 # actiondock-knowledge-inbox
 
-[ActionDock](https://github.com/team4u/actiondock) 知识库反馈与追加写入平面（Feedback / Append Plane），专用于知识库自动维护与反馈闭环架构。
+[ActionDock](https://github.com/team4u/actiondock) 知识库反馈与追加写入平面，专用于知识库自动维护与反馈闭环架构。
 
-本包运行在服务端，负责收集、检索与归档由人工排障、日常运维及 Agent 排错产生的 Candidate Markdown 文档。
+本包运行在服务端，负责收集、检索与归档由人工排障、日常运维及 Agent 排错产生的候选 Markdown 文档。
 
 ---
 
@@ -10,9 +10,9 @@
 
 | 组件 / 包 | 定位 | 权限模式 | 职责 |
 |---|---|---|---|
-| `knowledge-workspace` | 工作区只读平面 | 只读 | 为维护智能体提供只读工程上下文与文件检索 (`search.rg`, `files.read`, `files.list`) |
+| `knowledge-workspace` | 工作区能力平面 | 读写受控 | 为维护智能体提供工程检索、受控读写与工作区内终端执行 (`search.rg`, `files.read`, `files.list`, `files.write`, `files.edit`, `bash.exec`)，对外只读由查询视图动作白名单实现 |
 | `knowledge-inbox` | 反馈追加平面 | 追加写入 | 收集、检索与归档人工排障及日常维护产生的候选文档 |
-| `knowledge-maintenance` | 特权维护平面 | 受控写 | 双分支代码仓与单分支系统知识仓的同步、待维护扫描与检查点推进 |
+| `knowledge-maintenance` | 特权维护平面 | 受控写入 | 双分支代码仓与单分支系统知识仓的同步、待维护扫描与检查点推进 |
 
 ### 遵循极简原则
 - 高容错正文接收：不搞死板复杂的正则门禁检查，以极高的容错性接收任何 Markdown 正文；

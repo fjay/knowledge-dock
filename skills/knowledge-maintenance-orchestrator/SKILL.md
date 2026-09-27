@@ -58,11 +58,12 @@ metadata:
   ```
 - **同步返回决议判定**：
   - **执行成功**（`status == "success"`）：代码分支同步成功完成，直接进入变更扫描环节。
-  - **存在冲突**（`status == "conflict"`）：检测到知识文档合并冲突，获取返回结果中的 `conflicts` 列表逐一消解：
-    - 调用 `workspace/files.read`（`--profile skm -- path="<repoPath>/<conflictFile>"`）读取带冲突标记的文档内容。
+  - **存在冲突**（`status == "conflict"`）：同步动作已安全中止合并（`git merge --abort`），工作区恢复干净，返回结果中的 `conflictFiles` 仅是冲突文件清单，文件中已无冲突标记。消解规程：
+    - 调用 `workspace/bash.exec`（`--profile skm -- command="git merge origin/<sourceBranch>" cwd="<repoPath>"`）在工作区内重新发起合并，使冲突真实落盘。
+    - 调用 `workspace/files.read`（`--profile skm -- path="<repoPath>/<conflictFile>"`）逐个读取带冲突标记的文档内容。
     - 理解本地知识分支与远端变更两端事实，消除冲突标记，合成为最准确完备的知识文档。
-    - 调用 `workspace/files.write`（`--profile skm -- path="<repoPath>/<conflictFile>" content="<消解后的文档内容>"`）安全写回消解后的文档。
-    - 调用 `maintenance/maintenance.publish`（`--profile skm -- path="<repoPath>" message="docs(merge): resolve knowledge conflict"`）提交并推送消解成果。
+    - 调用 `workspace/files.write`（`--profile skm -- path="<repoPath>/<conflictFile>" content="<消解后的文档内容>"`）安全写回，再调用 `workspace/bash.exec` 执行 `git add <conflictFile> && git commit` 完成合并提交。
+    - 调用 `maintenance/maintenance.publish`（`--profile skm -- path="<repoPath>" message="docs(merge): resolve knowledge conflict"`）推送消解成果。
     - 冲突消解完成后，继续进入变更扫描环节。
   - **执行异常**（`status == "error"`）：记录错误详情并终止后续流程。
 

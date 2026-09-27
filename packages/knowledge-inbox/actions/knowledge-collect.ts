@@ -12,11 +12,7 @@ import {
   serializeMarkdownWithFrontmatter,
   normalizeRepos,
 } from "../src/frontmatter.ts";
-import {
-  getInboxRoot,
-  ensureDirectory,
-  assertPathInside,
-} from "../src/storage.ts";
+import { getInboxRoot, ensureDirectory } from "../src/storage.ts";
 
 export type Input = ActionInput<"knowledge.collect">;
 export type Output = ActionOutput<"knowledge.collect">;
@@ -59,12 +55,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   }
 
   // Extract and normalize repos from markdown frontmatter (with legacy repo fallback)
-  const repos = normalizeRepos(
-    undefined,
-    undefined,
-    frontmatterData.repos,
-    frontmatterData.repo
-  );
+  const repos = normalizeRepos(frontmatterData.repos, frontmatterData.repo);
 
   // Persist repos into frontmatter
   if (repos.length > 0) {
@@ -88,9 +79,6 @@ export default defineAction<Input, Output>(async (input, ctx) => {
 
   const safeFilename = buildCandidateFilename(datePart, timePart, shortHash, slug);
   const targetFilePath = path.join(pendingDir, safeFilename);
-
-  // Strictly prevent path traversal
-  assertPathInside(targetFilePath, pendingDir);
 
   // 6. Serialize enriched markdown with frontmatter and write to disk
   const finalContent = serializeMarkdownWithFrontmatter(

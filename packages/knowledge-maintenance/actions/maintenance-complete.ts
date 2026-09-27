@@ -47,17 +47,9 @@ export default defineAction<Input, Output>(async (input, ctx) => {
 
   // 3. Read previous checkpoint from ctx.state
   const stateKey = encodeStateKey("checkpoints", repoName);
-  let savedState = await ctx.state.get<any>(stateKey);
-  if (!savedState) {
-    savedState = await ctx.state.get<any>(repoName);
-  }
-
-  let previousCommit: string | null = null;
-  if (typeof savedState === "string") {
-    previousCommit = savedState;
-  } else if (savedState && typeof savedState.commit === "string") {
-    previousCommit = savedState.commit;
-  }
+  const savedState = await ctx.state.get<any>(stateKey);
+  const previousCommit: string | null =
+    savedState && typeof savedState.commit === "string" ? savedState.commit : null;
 
   // 4. Update checkpoint in state
   const updatedAt = new Date().toISOString();

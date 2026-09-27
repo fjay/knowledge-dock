@@ -4,7 +4,7 @@ import path from "node:path";
 import { defineAction } from "@actiondock/sdk";
 import type { ActionInput, ActionOutput } from "../.actiondock/generated/actions.d.ts";
 import { KnowledgeInboxError } from "../src/errors.ts";
-import { serializeMarkdownWithFrontmatter, extractCandidateYear } from "../src/frontmatter.ts";
+import { serializeMarkdownWithFrontmatter, extractCandidateYear, VALID_RESOLUTIONS } from "../src/frontmatter.ts";
 import {
   getInboxRoot,
   ensureDirectory,
@@ -13,13 +13,6 @@ import {
 
 export type Input = ActionInput<"knowledge.archive">;
 export type Output = ActionOutput<"knowledge.archive">;
-
-const VALID_RESOLUTIONS = new Set([
-  "accepted",
-  "duplicate",
-  "rejected",
-  "insufficient_evidence",
-]);
 
 export default defineAction<Input, Output>(async (input, ctx) => {
   const rawId = input.id ? String(input.id).trim() : "";
@@ -97,7 +90,14 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   try {
     await fs.promises.writeFile(tempPath, updatedContent, "utf-8");
     await fs.promises.rename(tempPath, targetFilePath);
-    await fs.promises.unlink(sourcePath);
+    try {
+      await fs.promises.unlink(sourcePath);
+    } catch (unlinkErr: any) {
+      // 并发归档同一文档时前一个请求已删除源文件，视为归档成功
+      if (unlinkErr.code !== "ENOENT") {
+        throw unlinkErr;
+      }
+    }
   } catch (err: any) {
     // Clean up temporary file if write or rename failed
     try {

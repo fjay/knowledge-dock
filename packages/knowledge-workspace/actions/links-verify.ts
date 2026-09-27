@@ -3,6 +3,7 @@ import path from "node:path";
 import { defineAction } from "@actiondock/sdk";
 import type { ActionInput, ActionOutput } from "../.actiondock/generated/actions.d.ts";
 import { WorkspacePathPolicy } from "../src/path-policy.ts";
+import { isRelativeInside } from "../src/path-policy.ts";
 import { isSensitivePath } from "../src/file-policy.ts";
 
 export type Input = ActionInput<"links.verify">;
@@ -113,17 +114,21 @@ function slugify(text: string): string {
     .replace(/\s+/g, "-");
 }
 
-function extractDocumentAnchors(content: string): Set<string> {
-  const validAnchors = new Set<string>();
-  const slugCounts = new Map<string, number>();
+/**
+ * 代码围栏与 HTML 注释的行级状态机，供锚点提取与主扫描共用。
+ * maskLine 在非注释分支中于注释遮蔽前应用（主扫描传入行内代码遮蔽）。
+ */
+interface FenceTracker {
+  step: (line: string) => { fenced: boolean; lineToScan: string };
+}
 
-  const lines = content.split(/\r?\n/);
+function createFenceTracker(
+  maskLine: (line: string) => string = (line) => line
+): FenceTracker {
   let currentFence: { char: string; len: number } | null = null;
   let inHtmlComment = false;
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
+  const step = (line: string): { fenced: boolean; lineToScan: string } => {
     if (currentFence !== null) {
       const escapedChar = currentFence.char === "`" ? "`" : "~";
       const fenceCloseRegex = new RegExp(
@@ -132,13 +137,13 @@ function extractDocumentAnchors(content: string): Set<string> {
       if (fenceCloseRegex.test(line)) {
         currentFence = null;
       }
-      continue;
+      return { fenced: true, lineToScan: "" };
     }
 
     if (inHtmlComment) {
       const commentRes = maskHtmlComments(line, true);
       inHtmlComment = commentRes.inComment;
-      continue;
+      return { fenced: false, lineToScan: maskLine(commentRes.maskedLine) };
     }
 
     const fenceOpenMatch = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
@@ -149,13 +154,33 @@ function extractDocumentAnchors(content: string): Set<string> {
 
       if (!rest.includes(fenceChar)) {
         currentFence = { char: fenceChar, len: fenceLen };
-        continue;
+        return { fenced: true, lineToScan: "" };
       }
     }
 
-    const commentRes = maskHtmlComments(line, false);
+    const commentRes = maskHtmlComments(maskLine(line), false);
     inHtmlComment = commentRes.inComment;
-    const lineToScan = commentRes.maskedLine;
+    return { fenced: false, lineToScan: commentRes.maskedLine };
+  };
+
+  return { step };
+}
+
+function extractDocumentAnchors(content: string): Set<string> {
+  const validAnchors = new Set<string>();
+  const slugCounts = new Map<string, number>();
+
+  const lines = content.split(/\r?\n/);
+  const fenceTracker = createFenceTracker();
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    const stepRes = fenceTracker.step(line);
+    if (stepRes.fenced) {
+      continue;
+    }
+    const lineToScan = stepRes.lineToScan;
 
     const atxMatch = lineToScan.match(/^\s{0,3}(#{1,6})\s+(.+?)(?:\s+#+)?\s*$/);
     let headingText: string | undefined;
@@ -285,7 +310,7 @@ function collectMarkdownFiles(
     if (entry.name.startsWith(".")) {
       continue;
     }
-    if (entry.name === "node_modules" || entry.name === ".git") {
+    if (entry.name === "node_modules") {
       continue;
     }
     if (ignoreDirNames.has(entry.name)) {
@@ -375,8 +400,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     const currentDocDir = path.dirname(file);
     const lines = content.split(/\r?\n/);
 
-    let currentFence: { char: string; len: number } | null = null;
-    let inHtmlComment = false;
+    const fenceTracker = createFenceTracker(maskInlineCode);
 
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       if (ctx.signal.aborted) {
@@ -386,41 +410,11 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       const line = lines[lineIdx];
       const lineNumber = lineIdx + 1;
 
-      if (currentFence !== null) {
-        const escapedChar = currentFence.char === "`" ? "`" : "~";
-        const fenceCloseRegex = new RegExp(
-          `^\\s*${escapedChar}{${currentFence.len},}\\s*$`
-        );
-        if (fenceCloseRegex.test(line)) {
-          currentFence = null;
-        }
+      const stepRes = fenceTracker.step(line);
+      if (stepRes.fenced) {
         continue;
       }
-
-      let lineToScan: string;
-
-      if (inHtmlComment) {
-        const commentRes = maskHtmlComments(line, true);
-        inHtmlComment = commentRes.inComment;
-        lineToScan = maskInlineCode(commentRes.maskedLine);
-      } else {
-        const fenceOpenMatch = line.match(/^\s*(`{3,}|~{3,})(.*)$/);
-        if (fenceOpenMatch) {
-          const fenceChar = fenceOpenMatch[1][0];
-          const fenceLen = fenceOpenMatch[1].length;
-          const rest = fenceOpenMatch[2];
-
-          if (!rest.includes(fenceChar)) {
-            currentFence = { char: fenceChar, len: fenceLen };
-            continue;
-          }
-        }
-
-        const lineWithoutInlineCode = maskInlineCode(line);
-        const commentRes = maskHtmlComments(lineWithoutInlineCode, false);
-        inHtmlComment = commentRes.inComment;
-        lineToScan = commentRes.maskedLine;
-      }
+      const lineToScan = stepRes.lineToScan;
 
       LINK_REGEX.lastIndex = 0;
       let match: RegExpExecArray | null;
@@ -491,11 +485,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
           }
 
           const targetRelFromRoot = path.relative(workspaceRoot, targetAbsolute);
-          const inside =
-            targetRelFromRoot === "" ||
-            (targetRelFromRoot !== ".." &&
-              !targetRelFromRoot.startsWith(`..${path.sep}`) &&
-              !path.isAbsolute(targetRelFromRoot));
+          const inside = isRelativeInside(targetRelFromRoot);
           const targetRelPosix =
             targetRelFromRoot === ""
               ? "."

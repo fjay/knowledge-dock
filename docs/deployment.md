@@ -13,7 +13,7 @@ knowledge-server 是基于 ActionDock 规范构建的一体化知识服务容器
 - **操作系统**：Linux（CentOS 7+、Ubuntu 20.04+、Debian 11+）。
 - **容器环境**：Docker（大于等于 20.10）与 Docker Compose（大于等于 2.0）。
 - **源码特性**：Monorepo 自包含架构，依赖本地装配，无需发布至 npm 源。
-- **SSH 密钥**：宿主机需配置访问内部 Git 仓库的密钥（如 `~/.ssh/id_rsa`），容器启动时会自动修正权限（目录 700，私钥 600，自动接受主机指纹）。
+- **SSH 密钥**：宿主机需配置访问内部 Git 仓库的密钥（如 `~/.ssh/id_rsa`，目录权限 700、私钥权限 600）。容器通过 `GIT_SSH_COMMAND` 自动接受新主机指纹，指纹库落在 `${KNOWLEDGE_DATA_DIR}/state/known_hosts`，与宿主机 `.ssh` 完全解耦。
 
 ---
 
@@ -109,6 +109,10 @@ KNOWLEDGE_DATA_DIR=/data/knowledge
 
 # 宿主机 SSH 密钥目录
 SSH_DIR=/root/.ssh
+
+# Git 提交身份配置 (知识库维护提交时的作者与邮箱)
+GIT_AUTHOR_NAME="Knowledge Maintainer"
+GIT_AUTHOR_EMAIL="maintainer@actiondock.local"
 ```
 
 ---

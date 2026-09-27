@@ -1,8 +1,8 @@
 import fs from "node:fs";
-import path from "node:path";
 import { defineAction, decodeText } from "@actiondock/sdk";
 import type { ActionInput, ActionOutput } from "../.actiondock/generated/actions.d.ts";
 import { WorkspaceError, WorkspaceErrorCode } from "../src/errors.ts";
+import { WorkspacePathPolicy } from "../src/path-policy.ts";
 
 export type Input = ActionInput<"bash.exec">;
 export type Output = ActionOutput<"bash.exec">;
@@ -30,17 +30,18 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     );
   }
 
-  const configuredRoot = ctx.config.get<string>("WORKSPACE_ROOT", process.cwd());
-  const workspaceRoot = fs.existsSync(configuredRoot) ? configuredRoot : process.cwd();
-  const cwd = input.cwd ? path.resolve(workspaceRoot, input.cwd) : workspaceRoot;
+  const workspaceRoot = ctx.config.get<string>("WORKSPACE_ROOT", process.cwd());
+  const pathPolicy = new WorkspacePathPolicy(workspaceRoot);
 
-  if (!fs.existsSync(cwd)) {
+  const resolvedCwd = pathPolicy.resolveAndValidate(input.cwd ?? "");
+  if (!resolvedCwd.stat?.isDirectory()) {
     throw new WorkspaceError(
-      `Working directory does not exist: ${cwd}`,
-      WorkspaceErrorCode.DIRECTORY_NOT_FOUND,
-      404
+      `Working directory is not a directory: ${input.cwd}`,
+      WorkspaceErrorCode.NOT_A_DIRECTORY,
+      400
     );
   }
+  const cwd = resolvedCwd.absolutePath;
 
   const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
@@ -56,6 +57,10 @@ export default defineAction<Input, Output>(async (input, ctx) => {
             PATH: process.env.PATH || "/usr/local/bin:/usr/bin:/bin",
             GIT_TERMINAL_PROMPT: "0",
             GIT_MERGE_AUTOEDIT: "no",
+            // 容器启动时由 entrypoint 注入，控制 SSH 指纹库落盘位置（不在默认白名单内，需显式透传）
+            ...(process.env.GIT_SSH_COMMAND
+              ? { GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND }
+              : {}),
           },
         },
         io: { mode: "pipe" },

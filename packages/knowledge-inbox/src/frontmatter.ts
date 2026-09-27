@@ -210,21 +210,21 @@ export function parseRepoList(source: unknown): string[] {
 }
 
 /**
- * Extract deduplicated repository identifiers from candidate metadata or input fields.
- * If inputRepos or inputRepo is provided, input takes precedence.
- * Otherwise falls back to frontmatter repos or repo.
+ * Extract deduplicated repository identifiers from candidate metadata.
+ * Merges frontmatter repos and legacy repo fields.
  */
-export function normalizeRepos(
-  reposInput?: unknown,
-  repoInput?: unknown,
-  fmRepos?: unknown,
-  fmRepo?: unknown
-): string[] {
-  const inputList = [...parseRepoList(reposInput), ...parseRepoList(repoInput)];
-  if (inputList.length > 0) {
-    return Array.from(new Set(inputList));
-  }
+export function normalizeRepos(fmRepos?: unknown, fmRepo?: unknown): string[] {
   const fmList = [...parseRepoList(fmRepos), ...parseRepoList(fmRepo)];
   return Array.from(new Set(fmList));
 }
+
+/**
+ * Valid archive resolutions shared by knowledge.list and knowledge.archive.
+ */
+export const VALID_RESOLUTIONS = new Set([
+  "accepted",
+  "duplicate",
+  "rejected",
+  "insufficient_evidence",
+]);
 

@@ -8,18 +8,12 @@ import {
   extractFirstHeading,
   extractCandidateYear,
   normalizeRepos,
+  VALID_RESOLUTIONS,
 } from "../src/frontmatter.ts";
 import { getInboxRoot, scanMarkdownFiles } from "../src/storage.ts";
 
 export type Input = ActionInput<"knowledge.list">;
 export type Output = ActionOutput<"knowledge.list">;
-
-const VALID_RESOLUTIONS = new Set([
-  "accepted",
-  "duplicate",
-  "rejected",
-  "insufficient_evidence",
-]);
 
 export default defineAction<Input, Output>(async (input, ctx) => {
   const filterStatus = input.status ?? "pending";
@@ -126,10 +120,14 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       }
 
       // 5. Determine creation and archive timestamps
+      const birthtime =
+        stat.birthtime instanceof Date && !isNaN(stat.birthtime.getTime())
+          ? stat.birthtime.toISOString()
+          : undefined;
       const createdAt =
         (typeof data.created_at === "string" && data.created_at) ||
         (typeof data.createdAt === "string" && data.createdAt) ||
-        stat.birthtime.toISOString();
+        birthtime;
 
       const archivedAt =
         (typeof data.archived_at === "string" && data.archived_at) ||
@@ -180,19 +178,13 @@ export default defineAction<Input, Output>(async (input, ctx) => {
             : undefined
         );
       }
-
       // Filter by year if specified
       if (filterYear && itemYear !== filterYear) {
         continue;
       }
 
       // Extract candidate repos
-      const candidateRepos = normalizeRepos(
-        undefined,
-        undefined,
-        data.repos,
-        data.repo
-      );
+      const candidateRepos = normalizeRepos(data.repos, data.repo);
 
       // Filter by repo if specified
       if (filterRepo && !candidateRepos.includes(filterRepo)) {

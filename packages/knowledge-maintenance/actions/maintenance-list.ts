@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import { defineAction, encodeStateKey, type ActionContext } from "@actiondock/sdk";
 import type { ActionInput, ActionOutput } from "../.actiondock/generated/actions.d.ts";
 import { GitClient } from "../src/git.ts";
@@ -9,6 +8,7 @@ import {
   parseGitLog,
   parseDiffStat,
   ensureReposConfigFile,
+  detectRepoType,
 } from "../src/repo-utils.ts";
 import { MaintenanceError } from "../src/errors.ts";
 
@@ -79,16 +79,12 @@ async function scanSingleRepo(
       );
     }
 
-    // 1. Determine target branch
-    const branches = await git.listBranchNames();
+    // 1. Determine target branch (aligned with maintenance.sync's detectRepoType inference)
     let targetBranch = repoInput.branch ?? repoInput.sourceBranch;
     if (!targetBranch) {
-      if (branches.some((b) => b === "release" || b === "origin/release")) {
-        targetBranch = "release";
-      } else {
-        targetBranch = "master";
-      }
+      targetBranch = (await detectRepoType(git)) === "code" ? "release" : "master";
     }
+    const branches = await git.listBranchNames();
 
     // 优先检查已同步的远程跟踪分支 origin/<targetBranch>
     let commitBranch = targetBranch;
@@ -102,19 +98,9 @@ async function scanSingleRepo(
 
     // 3. Read checkpoint from ctx.state
     const stateKey = encodeStateKey("checkpoints", repoName);
-    let savedState = await ctx.state.get<any>(stateKey);
-
-    // Fallback to unnamespaced key if needed
-    if (!savedState) {
-      savedState = await ctx.state.get<any>(repoName);
-    }
-
-    let fromCommit: string | null = null;
-    if (typeof savedState === "string") {
-      fromCommit = savedState;
-    } else if (savedState && typeof savedState.commit === "string") {
-      fromCommit = savedState.commit;
-    }
+    const savedState = await ctx.state.get<any>(stateKey);
+    const fromCommit: string | null =
+      savedState && typeof savedState.commit === "string" ? savedState.commit : null;
 
     ctx.log.info("Resolved repository checkpoint and target commit", {
       repo: repoName,
@@ -127,6 +113,13 @@ async function scanSingleRepo(
     if (!fromCommit) {
       ctx.log.info(`No prior checkpoint found for repository ${repoName}; initial inventory needed`);
       const countRes = await git.run(["rev-list", "--count", toCommit]);
+      if (countRes.code !== 0) {
+        throw new MaintenanceError(
+          `Failed to count commits for ${toCommit}: ${countRes.stderr.trim()}`,
+          "GIT_ERROR",
+          500
+        );
+      }
       const totalCommits = parseInt(countRes.stdout.trim() || "0", 10);
 
       return {
@@ -177,12 +170,26 @@ async function scanSingleRepo(
       "--pretty=format:%H%x09%h%x09%an <%ae>%x09%aI%x09%s",
       `${fromCommit}..${toCommit}`,
     ]);
+    if (logRes.code !== 0) {
+      throw new MaintenanceError(
+        `Failed to read commit log between ${fromCommit} and ${toCommit}: ${logRes.stderr.trim()}`,
+        "GIT_ERROR",
+        500
+      );
+    }
     const commits = parseGitLog(logRes.stdout);
 
     const diffRes = await git.run(["diff", "--stat", `${fromCommit}..${toCommit}`]);
+    if (diffRes.code !== 0) {
+      throw new MaintenanceError(
+        `Failed to read diff stat between ${fromCommit} and ${toCommit}: ${diffRes.stderr.trim()}`,
+        "GIT_ERROR",
+        500
+      );
+    }
     const changedFilesSummary = parseDiffStat(diffRes.stdout);
 
-    const commitCount = commits.length > 0 ? commits.length : 1;
+    const commitCount = commits.length;
 
     ctx.log.info(`Found ${commitCount} new commit(s) in ${repoName}`);
 

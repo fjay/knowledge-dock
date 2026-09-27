@@ -1,0 +1,10 @@
+.git
+node_modules
+packages/*/node_modules
+.env
+packages/*/tests
+docs
+skills
+certs
+*.log
+maintenance-report.md

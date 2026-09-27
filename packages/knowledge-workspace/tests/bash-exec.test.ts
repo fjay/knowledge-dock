@@ -129,10 +129,41 @@ describe("workspace/bash.exec", () => {
     }
   });
 
+  it("rejects cwd escaping workspace root with PATH_OUTSIDE_WORKSPACE", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ws-bash-"));
+    try {
+      const runtime = createRuntime(tmpDir);
+      await assert.rejects(
+        () => runtime.run(bashExecAction, { command: "pwd", cwd: "../.." }),
+        (err: any) => err.code === "PATH_OUTSIDE_WORKSPACE"
+      );
+      await assert.rejects(
+        () => runtime.run(bashExecAction, { command: "pwd", cwd: "/etc" }),
+        (err: any) => err.code === "PATH_OUTSIDE_WORKSPACE"
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects non-directory cwd with NOT_A_DIRECTORY", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ws-bash-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "file.txt"), "x");
+      const runtime = createRuntime(tmpDir);
+      await assert.rejects(
+        () => runtime.run(bashExecAction, { command: "pwd", cwd: "file.txt" }),
+        (err: any) => err.code === "NOT_A_DIRECTORY"
+      );
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("outputs unboxed raw content to stdout and exitCode to stderr via ad CLI", () => {
     const projectRoot = path.resolve(import.meta.dirname, "..");
     const res = execSync(
-      "ad run bash.exec -- command=\"echo 'raw terminal stream'\"",
+      `ad run bash.exec -c WORKSPACE_ROOT=${JSON.stringify(projectRoot)} -- command="echo 'raw terminal stream'"`,
       {
         cwd: projectRoot,
         encoding: "utf8",

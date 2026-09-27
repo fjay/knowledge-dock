@@ -65,13 +65,16 @@ export function parseArgs(argv = []) {
 }
 
 /**
- * 安全引号转义，避免在 Shell 命令双引号字符串中插值时破裂
+ * 安全引号转义，避免在 Shell 命令双引号字符串中插值时破裂。
+ * 除双引号与反斜杠外，同时转义 $ 与反引号，阻断 $() 、 ${} 与 `` 展开注入。
  */
 export function escapeQuotes(val) {
   if (val === null || val === undefined) return "";
   return String(val)
     .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"');
+    .replace(/"/g, '\\"')
+    .replace(/\$/g, "\\$")
+    .replace(/`/g, "\\`");
 }
 
 /**
@@ -176,11 +179,11 @@ export function buildPrompt(data) {
     ``,
     `## 更新门槛与失效四问判定`,
     ``,
-    `- 失效四问判定：`,
-    `  - 业务含义变了吗？`,
-    `  - 接口契约变了吗？`,
-    `  - 流程分支变了吗？`,
-    `  - 运维排障变了吗？`,
+    `- 失效四问判定（与技能规范定义一致）：`,
+    `  - 行为：文档记载的流程、分支、状态、顺序、失败传播是否变化？`,
+    `  - 契约：文档记载的接口出入参、事件、队列、配置键语义是否变化？`,
+    `  - 定位：文档给出的文件、类、方法是否改名或移动？（行号漂移不算）`,
+    `  - 缺失：是否新增了该文档主题内读者需要的事实（新入口、新分支、新失败路径、新公共规则）？`,
     `- 若四问均为“否”（仅为代码重构或优化，业务未变），严禁改动文档，直接判定为无需更新（no_change_needed）。`,
     ``,
     `## 特权受控工具速查与自省指令`,
@@ -337,7 +340,7 @@ export async function defaultExec(cmd) {
 export async function queryRemoteList(profile = "skm", repoPath = null, execFn = defaultExec) {
   let cmd = `ad run maintenance.list --profile ${profile} --json`;
   if (repoPath) {
-    cmd += ` -- path="${repoPath}"`;
+    cmd += ` -- path="${escapeQuotes(repoPath)}"`;
   }
   const { stdout } = await execFn(cmd);
   const parsed = JSON.parse(stdout);
@@ -502,9 +505,10 @@ export async function runPipeline(options, hooks = {}) {
     dispatchFn = null,
     sleepFn = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     onProgress = null,
+    nowFn = Date.now,
   } = hooks;
 
-  const startTime = Date.now();
+  const startTime = nowFn();
 
   // 1. 扫描远端全量或单仓状态
   const scanData = await queryRemoteList(options.profile, null, execFn);
@@ -539,7 +543,18 @@ export async function runPipeline(options, hooks = {}) {
   const pendingRepos = [];
   for (const item of allRepos) {
     const repoName = item.repo || (item.path ? path.basename(item.path) : "");
-    if (!item.hasChanges && item.status !== "initial" && item.status !== "changed") {
+    if (item.status === "error") {
+      // 扫描阶段的真实故障必须计为失败，严禁伪装成“已对齐跳过”
+      failedCount++;
+      results.push({
+        repo: repoName,
+        path: item.path,
+        status: "failed",
+        targetCommit: item.to || item.from || "",
+        durationMs: 0,
+        message: `远端扫描失败: ${item.message || "unknown error"}`,
+      });
+    } else if (!item.hasChanges && item.status !== "initial" && item.status !== "changed") {
       skippedCount++;
       results.push({
         repo: repoName,
@@ -593,11 +608,11 @@ export async function runPipeline(options, hooks = {}) {
     const placeholders = buildPlaceholders(repoItem);
     const repoName = placeholders.repo;
     const targetCommit = placeholders.to;
-    const repoStartTime = Date.now();
+    const repoStartTime = nowFn();
 
     const reportProgress = () => {
-      const activeRepoElapsed = Date.now() - repoStartTime;
-      const totalElapsed = Date.now() - startTime;
+      const activeRepoElapsed = nowFn() - repoStartTime;
+      const totalElapsed = nowFn() - startTime;
       const stats = {
         total: allRepos.length,
         processed: skippedCount + completedCount + failedCount,
@@ -631,7 +646,7 @@ export async function runPipeline(options, hooks = {}) {
         path: repoItem.path,
         status: "failed",
         targetCommit,
-        durationMs: Date.now() - repoStartTime,
+        durationMs: nowFn() - repoStartTime,
         message: `派发执行异常: ${err.message}`,
       });
       continue;
@@ -646,7 +661,7 @@ export async function runPipeline(options, hooks = {}) {
 
       await sleepFn(intervalMs);
 
-      const elapsed = Date.now() - repoStartTime;
+      const elapsed = nowFn() - repoStartTime;
       if (elapsed >= timeoutMs) {
         isTimedOut = true;
         break;
@@ -663,7 +678,7 @@ export async function runPipeline(options, hooks = {}) {
       }
     }
 
-    const durationMs = Date.now() - repoStartTime;
+    const durationMs = nowFn() - repoStartTime;
 
     if (isFinished) {
       completedCount++;
@@ -688,7 +703,7 @@ export async function runPipeline(options, hooks = {}) {
     }
   }
 
-  const totalElapsedMs = Date.now() - startTime;
+  const totalElapsedMs = nowFn() - startTime;
 
   const summary = {
     profile: options.profile,
@@ -702,17 +717,20 @@ export async function runPipeline(options, hooks = {}) {
 
   const mdReport = generateMarkdownReport(summary);
 
+  let reportSaved = true;
   if (options.reportFile) {
     try {
       fs.writeFileSync(options.reportFile, mdReport, "utf8");
     } catch (err) {
-      // 容错捕获
+      reportSaved = false;
+      console.error(`[WARN] 结算报告写入失败: ${options.reportFile} (${err.message})`);
     }
   }
 
   return {
     ...summary,
     markdownReport: mdReport,
+    reportSaved,
   };
 }
 
@@ -766,7 +784,11 @@ export async function main(argv = process.argv.slice(2)) {
   console.log(result.markdownReport);
 
   if (options.reportFile) {
-    console.log(`结算报告已保存至文件：${options.reportFile}`);
+    if (result.reportSaved === false) {
+      console.log(`结算报告保存失败：${options.reportFile}（详见上方警告）`);
+    } else {
+      console.log(`结算报告已保存至文件：${options.reportFile}`);
+    }
   }
 
   if (result.failed > 0) {

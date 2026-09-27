@@ -52,6 +52,7 @@ export interface PipelineSummary {
   totalElapsedMs: number;
   results: RepoResult[];
   markdownReport?: string;
+  reportSaved?: boolean;
 }
 
 export interface DryRunOutputItem {
@@ -118,6 +119,8 @@ export function runPipeline(
     dispatchFn?: ((cmd: string, placeholders: Placeholders) => Promise<any> | any) | null;
     sleepFn?: (ms: number) => Promise<void>;
     onProgress?: ((stats: DashboardStats) => void) | null;
+    /** 可注入的时钟函数，测试用虚拟时钟驱动，缺省为 Date.now */
+    nowFn?: () => number;
   }
 ): Promise<PipelineSummary | DryRunResult>;
 

@@ -15,9 +15,10 @@ services:
       - WORKSPACE_ROOT=/srv/workspace
       - KNOWLEDGE_INBOX_ROOT=/srv/knowledge-inbox
       - GIT_BLOBLESS_FETCH=true
+      - GIT_AUTHOR_NAME=${GIT_AUTHOR_NAME:-Knowledge Maintainer}
+      - GIT_AUTHOR_EMAIL=${GIT_AUTHOR_EMAIL:-maintainer@actiondock.local}
     volumes:
       - ./entrypoint.sh:/entrypoint.sh:ro
-      - ./server:/app/server:ro
       # ActionDock 运行时状态库 (包含检查点 checkpoints 与运行状态，必须持久化以防容器重启丢失)
       - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/state:/root/.actiondock
       # 代码工程工作区 (统一基于 KNOWLEDGE_DATA_DIR 自动衍生，不给单独自定义)
@@ -34,3 +35,8 @@ services:
       - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/logs:/var/log/actiondock
       # 本地沙盒 Git 裸仓远端目录
       - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/remotes:/data/knowledge/remotes
+    healthcheck:
+      test: ["CMD-SHELL", "curl -kf -H \"Authorization: Bearer $${ACTIONDOCK_TOKEN}\" https://localhost:443/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

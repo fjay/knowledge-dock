@@ -1,14 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { ActionContext } from "@actiondock/sdk";
-import { KnowledgeInboxError } from "./errors.ts";
 import { parseFrontmatter, type ParsedMarkdown } from "./frontmatter.ts";
 
 export interface CandidateFileMatch {
   filePath: string;
   filename: string;
   frontmatter: ParsedMarkdown;
-  content: string;
 }
 
 /**
@@ -29,26 +27,6 @@ export async function ensureDirectory(dirPath: string): Promise<string> {
   const resolved = path.resolve(dirPath);
   await fs.promises.mkdir(resolved, { recursive: true });
   return resolved;
-}
-
-/**
- * Validate that a target path is strictly within the intended base directory,
- * preventing directory traversal attacks.
- */
-export function assertPathInside(targetPath: string, baseDir: string): void {
-  const resolvedTarget = path.resolve(targetPath);
-  const resolvedBase = path.resolve(baseDir);
-
-  if (
-    !resolvedTarget.startsWith(resolvedBase + path.sep) &&
-    resolvedTarget !== resolvedBase
-  ) {
-    throw new KnowledgeInboxError(
-      `Access denied: path traversal detected: '${targetPath}'`,
-      "PATH_TRAVERSAL",
-      400
-    );
-  }
 }
 
 /**
@@ -105,12 +83,11 @@ export async function findPendingCandidate(
       const filePath = path.join(pendingDir, name);
       const content = await fs.promises.readFile(filePath, "utf-8");
       const frontmatter = parseFrontmatter(content);
-      return { filePath, filename: name, frontmatter, content };
+      return { filePath, filename: name, frontmatter };
     }
   }
 
-  // Pass 2: Inspect frontmatter ID and substring matches
-  let candidateMatch: CandidateFileMatch | null = null;
+  // Pass 2: Exact frontmatter id match
   for (const name of mdFiles) {
     const filePath = path.join(pendingDir, name);
     let content: string;
@@ -122,23 +99,10 @@ export async function findPendingCandidate(
 
     const parsed = parseFrontmatter(content);
 
-    // Check exact frontmatter id match
     if (parsed.data && String(parsed.data.id).trim() === cleanId) {
-      return { filePath, filename: name, frontmatter: parsed, content };
-    }
-
-    // Check if filename contains cleanId (e.g. id "20260924-a1b2c3" in "20260924-112345-a1b2c3-slug.md")
-    const idParts = cleanId.split("-");
-    const isIdInName =
-      name.includes(cleanId) ||
-      (idParts.length >= 2 &&
-        name.startsWith(idParts[0]) &&
-        name.includes(`-${idParts[1]}-`));
-
-    if (isIdInName && !candidateMatch) {
-      candidateMatch = { filePath, filename: name, frontmatter: parsed, content };
+      return { filePath, filename: name, frontmatter: parsed };
     }
   }
 
-  return candidateMatch;
+  return null;
 }

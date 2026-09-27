@@ -4,7 +4,7 @@
   "id": "workspace",
   "name": "Workspace",
   "version": "0.1.0",
-  "description": "Read-only engineering workspace search and file access",
+  "description": "Engineering workspace search, controlled file read/write/edit, in-workspace bash execution and link verification",
   "config": {
     "WORKSPACE_ROOT": {
       "type": "string",

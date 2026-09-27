@@ -8,3 +8,6 @@ Thumbs.db
 *.zip
 *.tar.gz
 *.tar
+
+# 本地多仓流水线默认结算报告产物
+maintenance-report.md

@@ -38,6 +38,29 @@ describe("workspace/files.edit", () => {
     }
   });
 
+  it("treats replacement content literally without $ pattern expansion", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ws-edit-"));
+    try {
+      const filePath = path.join(tmpDir, "shell.txt");
+      fs.writeFileSync(filePath, "echo old\n", "utf8");
+
+      const runtime = createTestRuntime({
+        config: { WORKSPACE_ROOT: tmpDir },
+      });
+
+      // $&、$`、$' 在字符串替换形式中会被特殊展开，函数形式必须原样写入
+      await runtime.run(filesEditAction, {
+        path: "shell.txt",
+        targetContent: "old",
+        replacementContent: "$&$`$'new",
+      });
+
+      assert.equal(fs.readFileSync(filePath, "utf8"), "echo $&$`$'new\n");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("rejects multiple occurrences when allowMultiple is false (default)", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ws-edit-"));
     try {

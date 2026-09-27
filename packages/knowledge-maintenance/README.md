@@ -1,6 +1,6 @@
 # actiondock-knowledge-maintenance
 
-[ActionDock](https://github.com/team4u/actiondock) 高权限维护平面（Privileged Maintenance Plane），专用于知识库自动维护与反馈闭环架构。
+[ActionDock](https://github.com/team4u/actiondock) 高权限维护平面，专用于知识库自动维护与反馈闭环架构。
 
 本包运行在云主机后台，负责代码仓与系统知识仓的 Git 同步、变更扫描及审查检查点推进。
 
@@ -10,9 +10,9 @@
 
 | 组件 / 包 | 定位 | 权限模式 | 职责 |
 |---|---|---|---|
-| `knowledge-workspace` | Read Plane | 只读 (Read Only) | 为 Agent 提供只读文件检索与工程上下文 (`search.rg`, `files.read`, `files.list`) |
-| `knowledge-inbox` | Feedback / Append Plane | 追加 (Append Only) | 收集人工排障与补充候选文档 (`knowledge.collect`) |
-| `knowledge-maintenance` | 特权维护平面 | 受控写 (Git Write) | 双分支代码仓与单分支系统知识仓的同步、待维护扫描与检查点推进 |
+| `knowledge-workspace` | 工作区能力平面 | 读写受控 | 为 Agent 提供工程检索、受控读写与工作区内终端执行 (`search.rg`, `files.read`, `files.list`, `files.write`, `files.edit`, `bash.exec`)，对外只读由查询视图动作白名单实现 |
+| `knowledge-inbox` | 反馈追加平面 | 追加写入 | 收集人工排障与补充候选文档 (`knowledge.collect`) |
+| `knowledge-maintenance` | 特权维护平面 | 受控写入 | 双分支代码仓与单分支系统知识仓的同步、待维护扫描与检查点推进 |
 
 ### 仓库分支模型
 
@@ -42,8 +42,8 @@
 - **入口**：`actions/maintenance-list.ts`
 - **功能**：
   - 获取目标分支的当前 HEAD commit。
-  - 从 `ctx.state` 读取该仓库持久化的 `last_knowledge_checked_commit` checkpoint。
-  - **首次无 Checkpoint (策略 B)**：返回 `hasChanges: true`, `from: null`, `to: <HEAD>`, `commitCount`, `initialInventoryRequired: true`，提示需要首次全盘盘点。
+  - 从 `ctx.state` 读取该仓库持久化的检查点记录（命名空间 `checkpoints/<repo>`，内容为含 `commit`、`actionTaken`、`summary`、`updatedAt` 的对象）。
+  - **首次无检查点**：返回 `hasChanges: true`, `from: null`, `to: <HEAD>`, `commitCount`, `initialInventoryRequired: true`，提示需要首次全盘盘点。
   - **Checkpoint 与 HEAD 一致**：返回 `hasChanges: false`，无需再次检查。
   - **存在新变更**：通过 `git log` 和 `git diff --stat` 提取提交明细与变更统计，返回结构化提交列表与文件变更摘要。
 
@@ -55,6 +55,15 @@
   - 验证 commit 在仓库中真实有效 (`git cat-file -e <commit>^{commit}`)。
   - 解析完整 40 位哈希并更新持久化存储 `ctx.state`。
   - 返回 `{ repo, path, previousCommit, currentCommit, actionTaken, summary, updatedAt }`。
+
+### `maintenance.publish`
+
+- **入口**：`actions/maintenance-publish.ts`
+- **功能**：
+  - 校验目标路径为有效 Git 仓库并检查工作区状态，若工作区干净直接返回 `status: "no_changes"`。
+  - **参数**：`path`（仓库路径）、`files`（可选，仅提交指定文件清单，缺省提交全部变更）、`message`（提交信息，缺省 `docs: update knowledge documentation`）、`branch`（可选，目标分支）、`push`（可选，是否推送远端，默认 true）。
+  - 确保位于目标分支后执行 `git add` 与 `git commit`，并按需推送至远端。
+  - 返回 `{ status, path, repo, branch, committed, pushed, commit, files, message }`。
 
 ---
 

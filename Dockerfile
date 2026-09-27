@@ -20,9 +20,9 @@ RUN git config --global --add safe.directory '*' && \
     git config --global user.name "Knowledge Maintainer" && \
     git config --global user.email "maintainer@actiondock.local"
 
-# 全局安装最新版 ActionDock CLI
+# 内网 npm 源使用自签证书，需关闭 TLS 校验才能拉取
 RUN npm config set strict-ssl false && \
-    npm install -g @actiondock/cli && \
+    npm install -g @actiondock/cli@2.9.0 && \
     npm cache clean --force
 
 # 创建 Monorepo 应用目录并拷贝 package.json 与 packages
@@ -31,7 +31,7 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages ./packages
 
-# 安装工作空间生产依赖
+# 安装工作空间生产依赖（内网自签证书源，显式关闭 TLS 校验，不依赖全局配置）
 RUN npm install --omit=dev --strict-ssl=false && npm cache clean --force
 
 # 链接本地 packages 至 ActionDock 全局路由

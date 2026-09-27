@@ -24,7 +24,74 @@ export interface GitExecResult {
   signal: string | null;
   stdout: string;
   stderr: string;
-  raw: string;
+}
+
+/**
+ * Shared low-level git execution: env injection, output decoding and signal checks.
+ */
+async function execGit(
+  ctx: ActionContext,
+  args: string[],
+  options: {
+    cwd: string;
+    timeoutMs: number;
+    maxOutputBytes: number;
+    env?: Record<string, string>;
+  }
+): Promise<GitExecResult> {
+  if (ctx.signal.aborted) {
+    throw new MaintenanceError("Git operation aborted by caller", "OPERATION_ABORTED", 499);
+  }
+
+  ctx.log.debug(`Executing: git ${args.join(" ")} in ${options.cwd}`);
+
+  const res = await ctx.process.run(
+    {
+      spec: {
+        executable: "git",
+        args,
+        cwd: options.cwd,
+        env: {
+          inherit: "allowlisted",
+          set: {
+            GIT_TERMINAL_PROMPT: "0",
+            GIT_MERGE_AUTOEDIT: "no",
+            // 容器启动时由 entrypoint 注入，控制 SSH 指纹库落盘位置（不在默认白名单内，需显式透传）
+            ...(process.env.GIT_SSH_COMMAND
+              ? { GIT_SSH_COMMAND: process.env.GIT_SSH_COMMAND }
+              : {}),
+            ...(options.env ?? {}),
+          },
+        },
+        io: { mode: "pipe" },
+      },
+      timeoutMs: options.timeoutMs,
+      maxOutputBytes: options.maxOutputBytes,
+    },
+    { signal: ctx.signal }
+  );
+
+  const stdoutChunks = res.chunks.filter((c) => c.stream === "stdout");
+  const stderrChunks = res.chunks.filter((c) => c.stream === "stderr");
+  return {
+    code: res.exit.code,
+    signal: res.exit.signal,
+    stdout: decodeText(stdoutChunks),
+    stderr: decodeText(stderrChunks),
+  };
+}
+
+/**
+ * Detects whether a failed fetch/clone stems from unsupported partial clone filtering.
+ */
+function isFilterUnsupported(res: GitExecResult): boolean {
+  const combined = (res.stderr + " " + res.stdout).toLowerCase();
+  return (
+    combined.includes("filter") ||
+    combined.includes("unknown option") ||
+    combined.includes("not supported") ||
+    combined.includes("unsupported")
+  );
 }
 
 export class GitClient {
@@ -46,51 +113,12 @@ export class GitClient {
   }
 
   async run(args: string[], options?: GitRunnerOptions): Promise<GitExecResult> {
-    const cwd = options?.cwd ?? this.defaultCwd;
-    const timeoutMs = options?.timeoutMs ?? this.defaultTimeoutMs;
-    const maxOutputBytes = options?.maxOutputBytes ?? this.defaultMaxOutputBytes;
-
-    if (this.ctx.signal.aborted) {
-      throw new MaintenanceError("Git operation aborted by caller", "OPERATION_ABORTED", 499);
-    }
-
-    this.ctx.log.debug(`Executing: git ${args.join(" ")} in ${cwd}`);
-
-    const res = await this.ctx.process.run(
-      {
-        spec: {
-          executable: "git",
-          args,
-          cwd,
-          env: {
-            inherit: "allowlisted",
-            set: {
-              GIT_TERMINAL_PROMPT: "0",
-              GIT_MERGE_AUTOEDIT: "no",
-              ...(options?.env ?? {}),
-            },
-          },
-          io: { mode: "pipe" },
-        },
-        timeoutMs,
-        maxOutputBytes,
-      },
-      { signal: this.ctx.signal }
-    );
-
-    const stdoutChunks = res.chunks.filter((c) => c.stream === "stdout");
-    const stderrChunks = res.chunks.filter((c) => c.stream === "stderr");
-    const stdout = decodeText(stdoutChunks);
-    const stderr = decodeText(stderrChunks);
-    const raw = decodeText(res.chunks);
-
-    return {
-      code: res.exit.code,
-      signal: res.exit.signal,
-      stdout,
-      stderr,
-      raw,
-    };
+    return execGit(this.ctx, args, {
+      cwd: options?.cwd ?? this.defaultCwd,
+      timeoutMs: options?.timeoutMs ?? this.defaultTimeoutMs,
+      maxOutputBytes: options?.maxOutputBytes ?? this.defaultMaxOutputBytes,
+      ...(options?.env ? { env: options.env } : {}),
+    });
   }
 
   async isInsideWorkTree(): Promise<boolean> {
@@ -157,7 +185,11 @@ export class GitClient {
   async listBranchNames(): Promise<string[]> {
     const res = await this.run(["branch", "-a", "--format=%(refname:short)"]);
     if (res.code !== 0) {
-      return [];
+      throw new MaintenanceError(
+        `git branch failed: ${res.stderr.trim() || res.stdout.trim()}`,
+        "GIT_ERROR",
+        500
+      );
     }
     return res.stdout
       .split("\n")
@@ -170,42 +202,24 @@ export class GitClient {
     return res.code === 0;
   }
 
-  async fetchOrigin(options?: { filterBlobNone?: boolean; branch?: string }): Promise<GitExecResult> {
+  async fetchOrigin(options?: { filterBlobNone?: boolean }): Promise<GitExecResult> {
     const useBlobless = options?.filterBlobNone ?? true;
     if (useBlobless) {
-      const args = ["fetch", "--filter=blob:none", "origin"];
-      if (options?.branch) {
-        args.push(options.branch);
-      }
-      const bloblessRes = await this.run(args);
+      const bloblessRes = await this.run(["fetch", "--filter=blob:none", "origin"]);
       if (bloblessRes.code === 0) {
         return bloblessRes;
       }
 
-      const combined = (bloblessRes.stderr + " " + bloblessRes.stdout).toLowerCase();
-      if (
-        combined.includes("filter") ||
-        combined.includes("unknown option") ||
-        combined.includes("not supported") ||
-        combined.includes("unsupported")
-      ) {
+      if (isFilterUnsupported(bloblessRes)) {
         this.ctx.log.warn("Remote origin does not support --filter=blob:none; falling back to standard fetch", {
           error: bloblessRes.stderr.trim(),
         });
-        const fallbackArgs = ["fetch", "origin"];
-        if (options?.branch) {
-          fallbackArgs.push(options.branch);
-        }
-        return this.run(fallbackArgs);
+        return this.run(["fetch", "origin"]);
       }
       return bloblessRes;
     }
 
-    const standardArgs = ["fetch", "origin"];
-    if (options?.branch) {
-      standardArgs.push(options.branch);
-    }
-    return this.run(standardArgs);
+    return this.run(["fetch", "origin"]);
   }
 
   static async clone(
@@ -217,17 +231,7 @@ export class GitClient {
     const timeoutMs = options?.timeoutMs ?? DEFAULT_GIT_CLONE_TIMEOUT_MS;
     const maxOutputBytes = options?.maxOutputBytes ?? DEFAULT_GIT_MAX_OUTPUT_BYTES;
 
-    if (ctx.signal.aborted) {
-      throw new MaintenanceError("Git operation aborted by caller", "OPERATION_ABORTED", 499);
-    }
-
     const runClone = async (args: string[]): Promise<GitExecResult> => {
-      if (ctx.signal.aborted) {
-        throw new MaintenanceError("Git operation aborted by caller", "OPERATION_ABORTED", 499);
-      }
-
-      ctx.log.debug(`Executing: git ${args.join(" ")}`);
-
       const parentDir = path.dirname(targetPath);
       try {
         if (!fs.existsSync(parentDir)) {
@@ -237,42 +241,11 @@ export class GitClient {
         // Ignore parent directory creation error and let git handle it
       }
 
-      const cwd = fs.existsSync(parentDir) ? parentDir : process.cwd();
-
-      const res = await ctx.process.run(
-        {
-          spec: {
-            executable: "git",
-            args,
-            cwd,
-            env: {
-              inherit: "allowlisted",
-              set: {
-                GIT_TERMINAL_PROMPT: "0",
-                GIT_MERGE_AUTOEDIT: "no",
-              },
-            },
-            io: { mode: "pipe" },
-          },
-          timeoutMs,
-          maxOutputBytes,
-        },
-        { signal: ctx.signal }
-      );
-
-      const stdoutChunks = res.chunks.filter((c) => c.stream === "stdout");
-      const stderrChunks = res.chunks.filter((c) => c.stream === "stderr");
-      const stdout = decodeText(stdoutChunks);
-      const stderr = decodeText(stderrChunks);
-      const raw = decodeText(res.chunks);
-
-      return {
-        code: res.exit.code,
-        signal: res.exit.signal,
-        stdout,
-        stderr,
-        raw,
-      };
+      return execGit(ctx, args, {
+        cwd: fs.existsSync(parentDir) ? parentDir : process.cwd(),
+        timeoutMs,
+        maxOutputBytes,
+      });
     };
 
     const useBlobless = options?.filterBlobNone ?? true;
@@ -288,13 +261,7 @@ export class GitClient {
         return bloblessRes;
       }
 
-      const combined = (bloblessRes.stderr + " " + bloblessRes.stdout).toLowerCase();
-      if (
-        combined.includes("filter") ||
-        combined.includes("unknown option") ||
-        combined.includes("not supported") ||
-        combined.includes("unsupported")
-      ) {
+      if (isFilterUnsupported(bloblessRes)) {
         ctx.log.warn("Remote origin does not support --filter=blob:none; falling back to standard clone", {
           error: bloblessRes.stderr.trim(),
         });
@@ -321,16 +288,5 @@ export class GitClient {
     }
     standardArgs.push(url, targetPath);
     return runClone(standardArgs);
-  }
-
-  async clone(
-    url: string,
-    targetPath?: string,
-    options?: GitCloneOptions
-  ): Promise<GitExecResult> {
-    return GitClient.clone(this.ctx, url, targetPath ?? this.defaultCwd, {
-      maxOutputBytes: this.defaultMaxOutputBytes,
-      ...options,
-    });
   }
 }

@@ -190,7 +190,7 @@ export function parseGitLog(logOutput: string): ParsedCommit[] {
       const shortHash = parts[1] ? parts[1].trim() : "";
       const author = parts[2] ? parts[2].trim() : undefined;
       const date = parts[3] ? parts[3].trim() : undefined;
-      const message = parts[4] ? parts[4].trim() : (parts[2] ? parts[2].trim() : "");
+      const message = parts[4] ? parts[4].trim() : "";
 
       if (hash) {
         commits.push({

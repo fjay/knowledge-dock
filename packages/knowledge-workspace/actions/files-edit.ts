@@ -145,8 +145,8 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   }
 
   const replacedScope = allowMultiple
-    ? searchScope.replaceAll(input.targetContent, input.replacementContent)
-    : searchScope.replace(input.targetContent, input.replacementContent);
+    ? searchScope.replaceAll(input.targetContent, () => input.replacementContent)
+    : searchScope.replace(input.targetContent, () => input.replacementContent);
 
   const newContent =
     fileContent.slice(0, rangeStart) +

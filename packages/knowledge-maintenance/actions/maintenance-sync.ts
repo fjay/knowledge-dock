@@ -248,7 +248,18 @@ async function syncSingleRepo(
     ctx.log.info(`Remote branch origin/${docsBranch} does not exist. Initializing from origin/${sourceBranch}...`);
     const localDocsExists = await git.refExists(`refs/heads/${docsBranch}`);
     if (localDocsExists) {
-      await git.run(["checkout", docsBranch]);
+      const checkoutRes = await git.run(["checkout", docsBranch]);
+      if (checkoutRes.code !== 0) {
+        return {
+          status: "error",
+          path: resolvedPath,
+          cloned,
+          repoType,
+          sourceBranch,
+          knowledgeBranch: docsBranch,
+          message: `Failed to checkout ${docsBranch}: ${checkoutRes.stderr.trim()}`,
+        };
+      }
     } else {
       const checkoutRes = await git.run(["checkout", "-b", docsBranch, `origin/${sourceBranch}`]);
       if (checkoutRes.code !== 0) {
@@ -309,7 +320,18 @@ async function syncSingleRepo(
       };
     }
     // Bring local docs up to date with origin/docs
-    await git.run(["merge", "--ff-only", `origin/${docsBranch}`]);
+    const ffRes = await git.run(["merge", "--ff-only", `origin/${docsBranch}`]);
+    if (ffRes.code !== 0) {
+      return {
+        status: "error",
+        path: resolvedPath,
+        cloned,
+        repoType,
+        sourceBranch,
+        knowledgeBranch: docsBranch,
+        message: `Failed to fast-forward ${docsBranch} to origin/${docsBranch} (local branch may have diverged): ${ffRes.stderr.trim() || ffRes.stdout.trim()}`,
+      };
+    }
   } else {
     const checkoutRes = await git.run(["checkout", "-b", docsBranch, `origin/${docsBranch}`]);
     if (checkoutRes.code !== 0) {
@@ -481,14 +503,11 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   for (const repoConfig of reposToSync) {
     ctx.log.info("Batch synchronizing repository", { path: repoConfig.path });
     try {
+      // url 是每仓唯一身份，批量模式下不继承顶层 input.url，避免误用同一远端克隆全部仓库
       const singleResult = await syncSingleRepo(
         {
           path: repoConfig.path,
-          ...(repoConfig.url !== undefined
-            ? { url: repoConfig.url }
-            : input.url !== undefined
-            ? { url: input.url }
-            : {}),
+          ...(repoConfig.url !== undefined ? { url: repoConfig.url } : {}),
           ...(repoConfig.repoType !== undefined
             ? { repoType: repoConfig.repoType }
             : input.repoType !== undefined

@@ -25,6 +25,16 @@
       "type": "boolean",
       "description": "Whether to use --filter=blob:none by default when fetching from remote origin (default: true)",
       "env": "GIT_BLOBLESS_FETCH"
+    },
+    "GIT_AUTHOR_NAME": {
+      "type": "string",
+      "description": "Git commit author and committer name (default: Knowledge Maintainer)",
+      "env": "GIT_AUTHOR_NAME"
+    },
+    "GIT_AUTHOR_EMAIL": {
+      "type": "string",
+      "description": "Git commit author and committer email (default: maintainer@actiondock.local)",
+      "env": "GIT_AUTHOR_EMAIL"
     }
   },
   "actions": {
@@ -44,7 +54,7 @@
           },
           "url": {
             "type": "string",
-            "description": "远端 Git 仓库克隆地址（如 git@github.com:...、https://... 或本地裸仓路径）。当本地工作区不存在时，利用此地址执行自动部分克隆。",
+            "description": "Remote Git repository URL used to auto-clone when the local workspace does not exist",
             "examples": [
               "https://github.com/example/repo.git",
               "git@github.com:example/repo.git"

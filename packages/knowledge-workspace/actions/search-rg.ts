@@ -1,4 +1,4 @@
-import { defineAction, decodeText } from "@actiondock/sdk";
+import { defineAction, createIncrementalTextDecoder, decodeBytes } from "@actiondock/sdk";
 import type { ActionInput, ActionOutput } from "../.actiondock/generated/actions.d.ts";
 import { WorkspacePathPolicy } from "../src/path-policy.ts";
 import { buildRgArgs } from "../src/rg-args.ts";
@@ -78,6 +78,8 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   let truncated = false;
   let stderrText = "";
   let totalBytesRead = 0;
+  const stdoutDecoder = createIncrementalTextDecoder();
+  const stderrDecoder = createIncrementalTextDecoder();
 
   while (true) {
     if (ctx.signal.aborted) {
@@ -102,8 +104,12 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     currentCursor = readResult.nextCursor;
 
     for (const chunk of readResult.chunks) {
-      const chunkText = decodeText(chunk.data);
-      totalBytesRead += Buffer.byteLength(chunkText, "utf8");
+      const chunkBytes = decodeBytes(chunk.data);
+      const chunkText =
+        chunk.stream === "stderr"
+          ? stderrDecoder.decode(chunk.stream, chunkBytes)
+          : stdoutDecoder.decode(chunk.stream, chunkBytes);
+      totalBytesRead += chunkBytes.byteLength;
 
       if (chunk.stream === "stdout") {
         const hitLimit = parser.feed(chunkText);
@@ -134,7 +140,12 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     }
 
     if (readResult.eof) {
+      // 进程被超时或外部信号终止（exit.code 为 null）时，已收集的只是部分结果，必须标记截断
       const exitCode = readResult.process.exit?.code;
+      const exitSignal = readResult.process.exit?.signal;
+      if (exitSignal && exitCode === null) {
+        truncated = true;
+      }
       // 0 = matches found, 1 = no matches found, 2 = error (Section 17)
       if (
         exitCode !== null &&

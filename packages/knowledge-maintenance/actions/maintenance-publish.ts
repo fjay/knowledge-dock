@@ -152,13 +152,18 @@ export default defineAction<Input, Output>(async (input, ctx) => {
 
   // Commit
   const commitMsg = input.message?.trim() || "docs: update knowledge documentation";
+  const authorName = ctx.config.get<string>("GIT_AUTHOR_NAME") || process.env.GIT_AUTHOR_NAME || "Knowledge Maintainer";
+  const authorEmail = ctx.config.get<string>("GIT_AUTHOR_EMAIL") || process.env.GIT_AUTHOR_EMAIL || "maintainer@actiondock.local";
+  const committerName = process.env.GIT_COMMITTER_NAME || authorName;
+  const committerEmail = process.env.GIT_COMMITTER_EMAIL || authorEmail;
+
   ctx.log.info(`Committing ${stagedFiles.length} file(s) with message: "${commitMsg}"...`);
   const commitRes = await git.run(["commit", "-m", commitMsg], {
     env: {
-      GIT_AUTHOR_NAME: process.env.GIT_AUTHOR_NAME || "Knowledge Maintainer",
-      GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL || "maintainer@actiondock.local",
-      GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME || "Knowledge Maintainer",
-      GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL || "maintainer@actiondock.local",
+      GIT_AUTHOR_NAME: authorName,
+      GIT_AUTHOR_EMAIL: authorEmail,
+      GIT_COMMITTER_NAME: committerName,
+      GIT_COMMITTER_EMAIL: committerEmail,
     },
   });
 

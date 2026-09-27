@@ -3,6 +3,9 @@
  * Ensures consistent sensitive file filtering across all workspace actions.
  */
 
+import fs from "node:fs";
+import { WorkspaceError, WorkspaceErrorCode } from "./errors.ts";
+
 /**
  * Checks whether a given relative POSIX path matches sensitive file rules.
  * Paths are expected to use forward slashes and no leading slash.
@@ -14,9 +17,9 @@ export function isSensitivePath(relativePath: string): boolean {
   const cleanPath = relativePath.replace(/^(\.\/|\/)+/, "");
   const segments = cleanPath.split("/");
   const fileName = segments[segments.length - 1] || "";
+  const lowerFileName = fileName.toLowerCase();
 
   // Whitelist .env.example and .env.template (exact match or anywhere in hierarchy)
-  const lowerFileName = fileName.toLowerCase();
   if (lowerFileName === ".env.example" || lowerFileName === ".env.template") {
     return false;
   }
@@ -27,22 +30,22 @@ export function isSensitivePath(relativePath: string): boolean {
   }
 
   // Deny .env, .env.*
-  if (fileName === ".env" || fileName.startsWith(".env.")) {
+  if (lowerFileName === ".env" || lowerFileName.startsWith(".env.")) {
     return true;
   }
 
   // Deny *.pem, *.key
-  if (fileName.endsWith(".pem") || fileName.endsWith(".key")) {
+  if (lowerFileName.endsWith(".pem") || lowerFileName.endsWith(".key")) {
     return true;
   }
 
   // Deny id_rsa, id_rsa.*
-  if (fileName === "id_rsa" || fileName.startsWith("id_rsa.")) {
+  if (lowerFileName === "id_rsa" || lowerFileName.startsWith("id_rsa.")) {
     return true;
   }
 
   // Deny .npmrc, .pypirc
-  if (fileName === ".npmrc" || fileName === ".pypirc") {
+  if (lowerFileName === ".npmrc" || lowerFileName === ".pypirc") {
     return true;
   }
 
@@ -73,9 +76,6 @@ export function getRipgrepIgnoreGlobs(): string[] {
     "!**/.pypirc",
   ];
 }
-
-import fs from "node:fs";
-import { WorkspaceError, WorkspaceErrorCode } from "./errors.ts";
 
 /**
  * Validates that file is UTF-8 text and not binary.
