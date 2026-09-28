@@ -1,12 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import { defaultExec, triggerDispatch } from "./client/runner.ts";
+import { defaultExec } from "./client/runner.ts";
 import { queryRemoteList } from "./client/remote.ts";
-import { isRepoCompleted } from "./client/inspector.ts";
 import { renderTemplate } from "./template/engine.ts";
 import { buildPlaceholders } from "./template/placeholders.ts";
 import { formatDuration } from "./ui/format.ts";
 import { generateMarkdownReport } from "./report/markdown.ts";
+import { runCodePhase } from "./phases/code-phase.ts";
+import { runSystemKnowledgePhase } from "./phases/system-phase.ts";
 import { runInboxPhase } from "./phases/inbox-phase.ts";
 import type {
   PipelineOptions,
@@ -32,6 +33,9 @@ export * from "./client/runner.ts";
 export * from "./client/remote.ts";
 export * from "./client/inspector.ts";
 export * from "./report/markdown.ts";
+export * from "./phases/repo-dispatcher.ts";
+export * from "./phases/code-phase.ts";
+export * from "./phases/system-phase.ts";
 export * from "./phases/inbox-phase.ts";
 
 /**
@@ -43,16 +47,11 @@ export async function runPipeline(
 ): Promise<DryRunResult | PipelineSummary> {
   const {
     execFn = defaultExec,
-    dispatchFn = null,
-    sleepFn = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
-    onProgress = null,
     logFn = null,
     nowFn = Date.now,
   } = hooks;
 
   const profile = options.profile || "skm";
-  const timeoutVal = options.timeout ?? 15;
-  const intervalVal = options.interval ?? 10;
   const startTime = nowFn();
 
   const writeLog = (msg: string) => {
@@ -126,7 +125,6 @@ export async function runPipeline(
   // 确保按阶段顺序执行：先单仓代码巡检，后全局系统知识聚合
   const orderedRepos = [...codeRepos, ...systemRepos];
 
-  const results: RepoResult[] = [];
   let skippedCount = 0;
   let completedCount = 0;
   let failedCount = 0;
@@ -204,204 +202,51 @@ export async function runPipeline(
     throw new Error("缺少必需参数：--dispatch-cmd <template>。实际运行时必须提供派发命令模版。");
   }
 
-  // 6. 执行调度辅助处理函数
-  const timeoutMs = timeoutVal * 60 * 1000;
-  const intervalMs = intervalVal * 1000;
+  const results: RepoResult[] = [];
 
-  const processRepoDispatch = async (repoItem: any, placeholders: Record<string, any>) => {
-    const repoName = placeholders.repo;
-    const targetCommit = placeholders.to;
-    const repoType = placeholders.repoType || "code";
-    const repoStartTime = nowFn();
+  const getCurrentCounts = () => ({
+    skipped: skippedCount,
+    completed: completedCount,
+    failed: failedCount,
+  });
 
-    const reportProgress = () => {
-      const activeRepoElapsed = nowFn() - repoStartTime;
-      const totalElapsed = nowFn() - startTime;
-      const stats = {
-        total: orderedRepos.length,
-        processed: skippedCount + completedCount + failedCount,
-        skipped: skippedCount,
-        completed: completedCount,
-        failed: failedCount,
-        activeRepo: repoName,
-        activeRepoElapsed,
-        totalElapsed,
-      };
-      if (onProgress) {
-        onProgress(stats);
-      }
-    };
-
-    reportProgress();
-
-    // 渲染派发命令并触发
-    const renderedCmd = renderTemplate(options.dispatchCmd!, placeholders, { escapeQuotes: true });
-    writeLog(`[DISPATCH] 派发维护任务 -> 仓库: ${repoName} (${repoType}), 目标检查点: ${targetCommit}`);
-
-    try {
-      if (dispatchFn) {
-        await dispatchFn(renderedCmd, placeholders);
-      } else {
-        await triggerDispatch(renderedCmd);
-      }
-    } catch (err: any) {
-      failedCount++;
-      writeLog(`[ERROR] 仓库 ${repoName} 派发异常: ${err.message}`);
-      results.push({
-        repo: repoName,
-        path: repoItem.path,
-        repoType,
-        status: "failed",
-        targetCommit,
-        durationMs: nowFn() - repoStartTime,
-        message: `派发执行异常: ${err.message}`,
-      });
-      return;
-    }
-
-    // 进入异步状态侦听循环
-    let isFinished = false;
-    let isTimedOut = false;
-
-    while (!isFinished && !isTimedOut) {
-      reportProgress();
-
-      await sleepFn(intervalMs);
-
-      const elapsed = nowFn() - repoStartTime;
-      if (elapsed >= timeoutMs) {
-        isTimedOut = true;
-        break;
-      }
-
-      try {
-        const currentStatus = await queryRemoteList(profile, repoItem.path, execFn);
-        if (isRepoCompleted(currentStatus, targetCommit, { dispatchedAt: repoStartTime })) {
-          isFinished = true;
-          break;
-        }
-      } catch {
-        // 网络抖动不中断轮询，持续等待至超时
-      }
-    }
-
-    const durationMs = nowFn() - repoStartTime;
-
-    if (isFinished) {
+  const onResult = (res: RepoResult) => {
+    if (res.status === "completed") {
       completedCount++;
-      writeLog(`[SUCCESS] 仓库 ${repoName} 检查点推进成功: ${targetCommit} (耗时: ${formatDuration(durationMs)})`);
-      results.push({
-        repo: repoName,
-        path: repoItem.path,
-        repoType,
-        status: "completed",
-        targetCommit,
-        durationMs,
-        message: `检查点已成功推进至 ${targetCommit || "最新水位"}`,
-      });
-    } else {
+    } else if (res.status === "skipped") {
+      skippedCount++;
+    } else if (res.status === "failed") {
       failedCount++;
-      writeLog(`[TIMEOUT] 仓库 ${repoName} 推进超时 (${timeoutVal} 分钟)`);
-      results.push({
-        repo: repoName,
-        path: repoItem.path,
-        repoType,
-        status: "failed",
-        targetCommit,
-        durationMs,
-        message: `等待检查点推进超时 (${timeoutVal} 分钟)，未检测到 ${targetCommit || "推进记录"}`,
-      });
     }
   };
 
-  // 7. 第一阶段：单仓代码巡检与知识维护
-  writeLog(`[PHASE1] 开始第一阶段：单仓代码巡检 (待处理仓数: ${codeRepos.length})`);
-  for (const repoItem of codeRepos) {
-    const repoName = repoItem.repo || (repoItem.path ? path.basename(repoItem.path) : "");
-    if (repoItem.status === "error") {
-      failedCount++;
-      writeLog(`[ERROR] 仓库 ${repoName} 扫描失败: ${repoItem.message || "unknown error"}`);
-      results.push({
-        repo: repoName,
-        path: repoItem.path,
-        repoType: "code",
-        status: "failed",
-        targetCommit: repoItem.to || repoItem.from || "",
-        durationMs: 0,
-        message: `远端扫描失败: ${repoItem.message || "unknown error"}`,
-      });
-    } else if (!repoItem.hasChanges && repoItem.status !== "initial" && repoItem.status !== "changed") {
-      skippedCount++;
-      writeLog(`[SKIP] 仓库 ${repoName} (code) 检查点已对齐，跳过`);
-      results.push({
-        repo: repoName,
-        path: repoItem.path,
-        repoType: "code",
-        status: "skipped",
-        targetCommit: repoItem.to || repoItem.from || "",
-        durationMs: 0,
-        message: "远端检查点已对齐，无待核验代码变更",
-      });
-    } else {
-      const placeholders = buildPlaceholders(repoItem);
-      await processRepoDispatch(repoItem, placeholders);
-    }
-  }
+  // 6. 第一阶段：单仓代码巡检与知识维护
+  const codePhaseResult = await runCodePhase(codeRepos, {
+    options,
+    hooks,
+    startTime,
+    totalRepos: orderedRepos.length,
+    getCurrentCounts,
+    onResult,
+    writeLog,
+  });
+  results.push(...codePhaseResult.results);
 
-  // 8. 汇总第一阶段巡检成果，为系统知识库提供事实输入
-  const updatedCodeRepos = results.filter((r) => r.status === "completed" && r.repoType !== "system_knowledge");
-  let codePhaseSummary = "";
-  if (updatedCodeRepos.length > 0) {
-    codePhaseSummary =
-      `前序已完成巡检且发生更新的代码仓（共 ${updatedCodeRepos.length} 个）：\n` +
-      updatedCodeRepos.map((r) => `- ${r.repo}：已推进检查点至 ${r.targetCommit || "HEAD"}`).join("\n");
-  } else {
-    codePhaseSummary = "前序代码仓巡检完毕，所有代码仓均无变更或无需更新文档。";
-  }
+  // 7. 第二阶段：系统知识库全局聚合维护
+  const systemPhaseResult = await runSystemKnowledgePhase(systemRepos, {
+    options,
+    hooks,
+    startTime,
+    totalRepos: orderedRepos.length,
+    codePhaseSummary: codePhaseResult.codePhaseSummary,
+    updatedCodeReposCount: codePhaseResult.updatedCodeReposCount,
+    getCurrentCounts,
+    onResult,
+    writeLog,
+  });
+  results.push(...systemPhaseResult.results);
 
-  // 9. 第二阶段：系统知识库全局聚合维护
-  if (systemRepos.length > 0) {
-    writeLog(`[PHASE2] 开始第二阶段：系统知识库全局聚合维护 (系统仓数: ${systemRepos.length}, 前序更新数: ${updatedCodeRepos.length})`);
-  }
-  for (const repoItem of systemRepos) {
-    const repoName = repoItem.repo || (repoItem.path ? path.basename(repoItem.path) : "");
-    if (repoItem.status === "error") {
-      failedCount++;
-      writeLog(`[ERROR] 系统知识库 ${repoName} 扫描失败: ${repoItem.message || "unknown error"}`);
-      results.push({
-        repo: repoName,
-        path: repoItem.path,
-        repoType: "system_knowledge",
-        status: "failed",
-        targetCommit: repoItem.to || repoItem.from || "",
-        durationMs: 0,
-        message: `远端扫描失败: ${repoItem.message || "unknown error"}`,
-      });
-    } else if (
-      !repoItem.hasChanges &&
-      repoItem.status !== "initial" &&
-      repoItem.status !== "changed" &&
-      updatedCodeRepos.length === 0 &&
-      !options.only
-    ) {
-      skippedCount++;
-      writeLog(`[SKIP] 系统知识库 ${repoName} 前序代码仓无更新且基线已对齐，跳过`);
-      results.push({
-        repo: repoName,
-        path: repoItem.path,
-        repoType: "system_knowledge",
-        status: "skipped",
-        targetCommit: repoItem.to || repoItem.from || "",
-        durationMs: 0,
-        message: "前序代码仓均无变更且系统知识基线已对齐，跳过系统层维护",
-      });
-    } else {
-      const placeholders = buildPlaceholders(repoItem, { codePhaseSummary });
-      await processRepoDispatch(repoItem, placeholders);
-    }
-  }
-
-  // 10. 第三阶段：Knowledge Inbox 全局待审池串行巡检与消费
+  // 8. 第三阶段：Knowledge Inbox 全局待审池串行巡检与消费
   writeLog(`[PHASE3] 开始第三阶段：Knowledge Inbox 全局待审池巡检与消费`);
   const inboxSummary = await runInboxPhase(options, hooks, {
     startTime,
