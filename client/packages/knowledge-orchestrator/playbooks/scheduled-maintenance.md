@@ -55,6 +55,12 @@
     ```bash
     ad run orchestrator.pipeline -- profile="skm" skipSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
     ```
+- 开启自动分支同步与冲突自愈：
+  - 使用 `autoSync` 参数在巡检前执行分支同步核验；若检测到合并冲突自动派发消解智能体并轮询等待自愈，亦可通过 `conflictDispatchCmd` 指定专属消解命令模版。
+  - 调用示例：
+    ```bash
+    ad run orchestrator.pipeline -- profile="skm" autoSync:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"'
+    ```
 - 跳过待审池消费：
   - 使用 `skipInbox` 参数跳过待审池候选文档消费阶段。
   - 调用示例：

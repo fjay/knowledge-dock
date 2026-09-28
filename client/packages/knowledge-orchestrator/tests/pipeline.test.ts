@@ -473,4 +473,137 @@ describe("orchestrator.pipeline", () => {
     assert.equal(result.inboxTotal, 0);
     assert.equal(knowledgeListQueried, false, "开启 skipInbox 时严禁调用 knowledge.list 查询待审池");
   });
+
+  it("autoSync 生效：检测到冲突自动派发消解任务并轮询自愈完成闭环", async () => {
+    const fakeDriver = new FakeProcessDriver();
+    const dispatchedCommands: string[] = [];
+    let syncCallCount = 0;
+    let listPollCount = 0;
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          from: "1111111",
+          to: "2222222",
+          status: "changed",
+          hasChanges: true,
+          commits: [{ shortHash: "2222222", message: "feat: add payment" }],
+        },
+      ],
+    };
+
+    fakeDriver.onSpawn = (handle: any, spec: any) => {
+      const cmd = spec.args[1] || spec.args.join(" ");
+
+      // 1. 全量扫描
+      if (cmd.includes("maintenance.list") && !cmd.includes("-- path=")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: mockScanData }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
+      }
+      // 2. 分支同步探测
+      else if (cmd.includes("maintenance.sync")) {
+        syncCallCount++;
+        if (syncCallCount === 1) {
+          handle.emitOutput(
+            "stdout",
+            JSON.stringify({
+              ok: true,
+              data: {
+                status: "conflict",
+                conflictFiles: ["docs/flow.md"],
+                message: "Merge conflict in docs/flow.md",
+              },
+            }) + "\n"
+          );
+        } else {
+          handle.emitOutput(
+            "stdout",
+            JSON.stringify({
+              ok: true,
+              data: {
+                status: "success",
+                currentCommit: "2222222",
+                message: "Synced cleanly",
+              },
+            }) + "\n"
+          );
+        }
+        handle.emitExit({ code: 0, signal: null });
+      }
+      // 3. 检查点轮询
+      else if (cmd.includes("maintenance.list") && cmd.includes("order-service")) {
+        listPollCount++;
+        if (listPollCount >= 2) {
+          handle.emitOutput(
+            "stdout",
+            JSON.stringify({
+              ok: true,
+              data: {
+                repo: "order-service",
+                from: "2222222",
+                to: "2222222",
+                hasChanges: false,
+                status: "upToDate",
+              },
+            }) + "\n"
+          );
+        } else {
+          handle.emitOutput(
+            "stdout",
+            JSON.stringify({
+              ok: true,
+              data: {
+                repo: "order-service",
+                from: "1111111",
+                to: "2222222",
+                hasChanges: true,
+                status: "changed",
+              },
+            }) + "\n"
+          );
+        }
+        handle.emitExit({ code: 0, signal: null });
+      }
+      // 4. 外部智能体派发
+      else if (cmd.startsWith("dispatch ")) {
+        dispatchedCommands.push(cmd);
+        handle.emitExit({ code: 0, signal: null });
+      }
+      // 5. 待审池查询
+      else if (cmd.includes("knowledge.list")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { items: [] } }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
+      } else {
+        handle.emitExit({ code: 0, signal: null });
+      }
+      handle.emitOutputClosed("natural");
+    };
+
+    const runtime = createTestRuntime({
+      platform: createTestPlatform({ processDriver: fakeDriver }),
+    });
+
+    const result = await runtime.run(pipelineAction, {
+      profile: "skm",
+      dryRun: false,
+      dispatchCmd: 'dispatch --target="{{repo}}"',
+      autoSync: true,
+      conflictTimeout: 5,
+      timeout: 5,
+      interval: 1,
+      skipSystemKnowledge: true,
+      skipInbox: true,
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.completed, 1);
+    assert.equal(result.results[0].conflictResolved, true);
+    assert.deepEqual(result.results[0].conflictFiles, ["docs/flow.md"]);
+    assert.equal(dispatchedCommands.length, 2, "应依次派发冲突消解任务与日常维护任务");
+  });
 });
+

@@ -82,7 +82,10 @@ ad playbook show orchestrator/scheduled-maintenance
 - `{{candidateFilename}}`：待审候选文档文件名。
 - `{{candidatePath}}`：待审候选文档相对路径。
 - `{{candidateDomain}}`：待审候选文档所属业务域。
-- `{{prompt}}`：开箱即用的专业维护指导语模版（自动根据任务类型适配单代码仓、系统知识库或待审候选文档规程）。
+- `{{conflictFiles}}`：冲突文件清单（字符串逗号分隔）。
+- `{{conflictCount}}`：冲突文件数。
+- `{{isConflict}}`：是否为冲突消解任务标识。
+- `{{prompt}}`：开箱即用的专业维护指导语模版（自动根据任务类型适配单代码仓、系统知识库、待审候选文档或合并冲突消解规程）。
 
 ---
 
@@ -120,6 +123,7 @@ ad playbook show orchestrator/scheduled-maintenance
     tail -f /var/log/knowledge-pipeline.log
     ```
 - 定向过滤与可选阶段执行：
+  - 开启自动分支同步与冲突自愈：传入 `autoSync:=true`，亦可通过 `conflictDispatchCmd` 定制消解模版。
   - 仅处理指定仓库：传入 `only="order-service"`。
   - 仅执行代码仓巡检（跳过系统知识库）：传入 `skipSystemKnowledge:=true`。
   - 跳过待审池消费：传入 `skipInbox:=true`。
