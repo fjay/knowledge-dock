@@ -22,9 +22,6 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   const skipInbox = input.skipInbox ?? false;
   const reportFile = input.reportFile ?? "maintenance-report.md";
   const logFile = input.logFile ?? null;
-  const autoSync = input.autoSync ?? false;
-  const conflictDispatchCmd = input.conflictDispatchCmd ?? null;
-  const conflictTimeout = input.conflictTimeout ?? 10;
 
   ctx.log.info("Starting orchestrator.pipeline", {
     profile,
@@ -35,9 +32,6 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     skipSystemKnowledge,
     skipInbox,
     logFile,
-    autoSync,
-    conflictDispatchCmd,
-    conflictTimeout,
   });
 
   if (!dryRun && !dispatchCmd) {
@@ -150,9 +144,6 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       skipInbox,
       reportFile,
       logFile,
-      autoSync,
-      conflictDispatchCmd,
-      conflictTimeout,
     },
     hooks
   );
@@ -207,9 +198,6 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     ...(r.targetCommit ? { targetCommit: r.targetCommit } : {}),
     durationMs: r.durationMs ?? 0,
     ...(r.message ? { message: r.message } : {}),
-    ...(r.conflictResolved !== undefined ? { conflictResolved: r.conflictResolved } : {}),
-    ...(r.conflictFiles ? { conflictFiles: r.conflictFiles } : {}),
-    ...(r.conflictDurationMs !== undefined ? { conflictDurationMs: r.conflictDurationMs } : {}),
   }));
 
   const inboxResults = (rawResult.inboxResults ?? []).map((c) => ({

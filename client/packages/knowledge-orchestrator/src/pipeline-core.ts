@@ -16,9 +16,6 @@ export interface PipelineOptions {
   skipInbox?: boolean;
   reportFile?: string | null;
   logFile?: string | null;
-  autoSync?: boolean;
-  conflictDispatchCmd?: string | null;
-  conflictTimeout?: number;
   help?: boolean;
 }
 
@@ -48,12 +45,9 @@ export interface RepoResult {
   path: string;
   repoType: "code" | "system_knowledge";
   status: "completed" | "skipped" | "failed";
-  targetCommit?: string | undefined;
+  targetCommit?: string;
   durationMs: number;
   message: string;
-  conflictResolved?: boolean | undefined;
-  conflictFiles?: string[] | undefined;
-  conflictDurationMs?: number | undefined;
 }
 
 export interface InboxCandidate {
@@ -130,9 +124,6 @@ export function parseArgs(argv: string[] = []): Required<PipelineOptions> {
     skipInbox: false,
     reportFile: "maintenance-report.md",
     logFile: null,
-    autoSync: false,
-    conflictDispatchCmd: null,
-    conflictTimeout: 10,
     help: false,
   };
 
@@ -180,20 +171,6 @@ export function parseArgs(argv: string[] = []): Required<PipelineOptions> {
       options.logFile = argv[++i] ?? options.logFile;
     } else if (arg.startsWith("--log-file=")) {
       options.logFile = arg.slice("--log-file=".length);
-    } else if (arg === "--auto-sync") {
-      options.autoSync = true;
-    } else if (arg.startsWith("--auto-sync=")) {
-      options.autoSync = arg.slice("--auto-sync=".length) !== "false";
-    } else if (arg === "--conflict-dispatch-cmd") {
-      options.conflictDispatchCmd = argv[++i] ?? options.conflictDispatchCmd;
-    } else if (arg.startsWith("--conflict-dispatch-cmd=")) {
-      options.conflictDispatchCmd = arg.slice("--conflict-dispatch-cmd=".length);
-    } else if (arg === "--conflict-timeout") {
-      const val = parseFloat(argv[++i]);
-      if (!Number.isNaN(val) && val > 0) options.conflictTimeout = val;
-    } else if (arg.startsWith("--conflict-timeout=")) {
-      const val = parseFloat(arg.slice("--conflict-timeout=".length));
-      if (!Number.isNaN(val) && val > 0) options.conflictTimeout = val;
     }
   }
 
@@ -618,111 +595,6 @@ export function buildInboxPlaceholders(candidate: any = {}, extraContext: any = 
 }
 
 /**
- * 构造针对分支合并冲突专项消解的标准指导语模版
- */
-export function buildConflictPrompt(data: any): string {
-  const repo = data.repo || "";
-  const repoPath = data.path || (repo ? `/srv/workspace/${repo}` : "/srv/workspace");
-  const sourceBranch = data.sourceBranch || data.branch || "release";
-  const knowledgeBranch = data.knowledgeBranch || "docs";
-  const conflictFiles: string[] = Array.isArray(data.conflictFiles)
-    ? data.conflictFiles
-    : typeof data.conflictFiles === "string" && data.conflictFiles
-    ? data.conflictFiles.split(",").map((s: string) => s.trim()).filter(Boolean)
-    : [];
-  const conflictListStr =
-    conflictFiles.length > 0
-      ? conflictFiles.map((f) => `- ${f}`).join("\n")
-      : "- 未能捕获具体冲突文件清单，请在工作区内执行 git status 查验";
-
-  const lines = [
-    `# 知识分支合并冲突专项消解指导`,
-    ``,
-    `请针对目标仓库 ${repo} 执行分支合并冲突语义消解与提交闭环。`,
-    ``,
-    `## 任务背景与冲突上下文`,
-    ``,
-    `- 目标仓库：${repo}`,
-    `- 工作区绝对路径：${repoPath}`,
-    `- 主干业务分支：origin/${sourceBranch}`,
-    `- 目标知识分支：${knowledgeBranch}`,
-    `- 冲突文件清单：`,
-    conflictListStr,
-    ``,
-    `## 技能规范与参考`,
-    ``,
-    `请挂载并严格遵循 skills/knowledge-maintenance-orchestrator/SKILL.md 与 skills/project-knowledge-maintainer 技能规范（重点参考 references/single-repo-workflow.md 与 references/maintenance.md）。`,
-    ``,
-    `## 冲突消解标准操作规程`,
-    ``,
-    `- 重新触发合并使冲突标记落盘：`,
-    `  - 调用受管终端工具在工作区内执行合并操作：`,
-    `    - ad run workspace/bash.exec --profile skm -- command="git merge origin/${sourceBranch}" cwd="${repoPath}"`,
-    `- 读取冲突文档事实：`,
-    `  - 依次调用分段直读工具调阅冲突文件内容：`,
-    `    - ad run workspace/files.read --profile skm -- path="${repoPath}/<conflictFile>" startLine:=1 maxLines:=2000`,
-    `- 业务语义消解与内容合成：`,
-    `  - 深入比对本地知识分支与远端主干变更两端事实，消除冲突标记；`,
-    `  - 将两端改动合成为完整一致的文档内容，严禁机械删除或盲目覆盖；`,
-    `- 安全写回与合并提交：`,
-    `  - 调用安全写入工具将消解后的文档内容安全写回：`,
-    `    - ad run workspace/files.write --profile skm -- path="${repoPath}/<conflictFile>" content="<content>"`,
-    `  - 调用受管终端工具暂存文件并执行合并提交：`,
-    `    - ad run workspace/bash.exec --profile skm -- command="git add <conflictFile> && git commit -m 'docs(merge): resolve knowledge conflict'" cwd="${repoPath}"`,
-    `- 零断链自检自愈门禁：`,
-    `  - 若修改涉及 Markdown 文档，必须执行断链校验：`,
-    `    - ad run workspace/links.verify --profile skm -- path="${repoPath}"`,
-    `  - 若有断链必须就地修复至零断链方可交付；`,
-    `- 成果推送（解除冲突法定标志）：`,
-    `  - 调用发布动作推送消解成果至远端知识分支：`,
-    `    - ad run maintenance/maintenance.publish --profile skm -- path="${repoPath}" message="docs(merge): resolve knowledge conflict"`,
-    `  - 成功推送后，流水线轮询探针将自动检测到分支同步成功并放行流程。`,
-  ];
-
-  return lines.join("\n");
-}
-
-/**
- * 从冲突条目抽取全量模版占位符
- */
-export function buildConflictPlaceholders(
-  item: any = {},
-  conflictData: any = {},
-  extraContext: any = {}
-): Record<string, any> {
-  const repo = item.repo || (item.path ? path.basename(item.path) : "");
-  const repoPath = item.path || (repo ? `/srv/workspace/${repo}` : "/srv/workspace");
-  const sourceBranch = conflictData.sourceBranch || item.branch || "release";
-  const knowledgeBranch = conflictData.knowledgeBranch || "docs";
-  const conflictFilesArr = Array.isArray(conflictData.conflictFiles)
-    ? conflictData.conflictFiles
-    : [];
-  const conflictFiles = conflictFilesArr.join(", ");
-  const conflictCount = conflictFilesArr.length;
-
-  const prompt = buildConflictPrompt({
-    repo,
-    path: repoPath,
-    sourceBranch,
-    knowledgeBranch,
-    conflictFiles: conflictFilesArr,
-  });
-
-  return {
-    repo,
-    path: repoPath,
-    branch: sourceBranch,
-    sourceBranch,
-    knowledgeBranch,
-    conflictFiles,
-    conflictCount,
-    isConflict: true,
-    prompt,
-    ...extraContext,
-  };
-}
-
-/**
  * 构造统一维护指导语模版，根据仓库类型自动分流
  */
 export function buildPrompt(data: any): string {
@@ -731,9 +603,6 @@ export function buildPrompt(data: any): string {
   }
   if (data?.repoType === "inbox" || data?.candidateId) {
     return buildInboxCandidatePrompt(data);
-  }
-  if (data?.isConflict || data?.repoType === "conflict") {
-    return buildConflictPrompt(data);
   }
   return buildCodeRepoPrompt(data);
 }
@@ -916,23 +785,6 @@ export async function queryRemoteInboxList(
 }
 
 /**
- * 查询或触发远端分支同步状态 (maintenance.sync)
- */
-export async function queryRemoteSync(
-  profile: string = "skm",
-  repoPath: string,
-  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
-): Promise<any> {
-  const cmd = `ad run maintenance.sync --profile ${profile} --json -- path="${escapeQuotes(repoPath)}"`;
-  const { stdout } = await execFn(cmd);
-  const parsed = JSON.parse(stdout);
-  if (parsed.ok === false && parsed.error) {
-    throw new Error(parsed.error.message || `ActionDock 错误: ${parsed.error.code}`);
-  }
-  return parsed.data ?? parsed;
-}
-
-/**
  * 异步触发派发命令（非阻塞启动外部智能体）
  */
 export function triggerDispatch(command: string, { timeoutMs = 1500, execFn = null }: { timeoutMs?: number; execFn?: ((cmd: string) => any) | null } = {}): Promise<any> {
@@ -1029,12 +881,6 @@ export function generateMarkdownReport(reportData: {
   if (inboxSkipped) {
     md += `- 待审池状态：已跳过\n`;
   }
-  const conflictCount = results.filter((r) => (r.conflictFiles && r.conflictFiles.length > 0) || r.conflictResolved).length;
-  const conflictResolvedCount = results.filter((r) => r.conflictResolved).length;
-  if (conflictCount > 0) {
-    md += `- 合并冲突发生数：${conflictCount}\n`;
-    md += `- 冲突成功自愈数：${conflictResolvedCount}\n`;
-  }
   md += `- 流水线总耗时：${totalDurationStr}\n\n`;
   md += `## 仓库执行明细\n\n`;
 
@@ -1053,11 +899,6 @@ export function generateMarkdownReport(reportData: {
       md += `- 仓库标识：${r.repo}（${repoTypeLabel}）\n`;
       md += `  - 远端路径：${r.path}\n`;
       md += `  - 执行状态：${statusText}\n`;
-      if (r.conflictResolved) {
-        md += `  - 冲突处理：合并冲突已由智能体自动消解（耗时: ${formatDuration(r.conflictDurationMs || 0)}）\n`;
-      } else if (r.conflictFiles && r.conflictFiles.length > 0) {
-        md += `  - 冲突文件：${r.conflictFiles.join(", ")}\n`;
-      }
       if (r.targetCommit) {
         md += `  - 目标检查点：${r.targetCommit}\n`;
       }
@@ -1347,131 +1188,6 @@ export async function runInboxPhase(
 }
 
 /**
- * 针对分支合并冲突派发专项智能体并轮询等待自愈
- */
-export async function resolveConflictWithPolling(
-  options: {
-    profile?: string;
-    dispatchCmd?: string;
-    conflictDispatchCmd?: string | null;
-    conflictTimeout?: number;
-    interval?: number;
-    logFile?: string | null;
-  },
-  repoItem: any,
-  conflictData: any,
-  hooks: PipelineHooks = {}
-): Promise<{
-  success: boolean;
-  durationMs: number;
-  message: string;
-}> {
-  const {
-    execFn = defaultExec,
-    dispatchFn = null,
-    sleepFn = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
-    nowFn = Date.now,
-    logFn = console.log,
-  } = hooks;
-
-  const profile = options.profile ?? "skm";
-  const timeoutVal = options.conflictTimeout ?? 10;
-  const timeoutMs = timeoutVal * 60 * 1000;
-  const intervalVal = options.interval ?? 10;
-  const intervalMs = intervalVal * 1000;
-  const startTime = nowFn();
-
-  const writeLog = (msg: string) => {
-    if (logFn) logFn(msg);
-    if (options.logFile) {
-      const ts = new Date(nowFn()).toISOString();
-      try {
-        fs.appendFileSync(options.logFile, `[${ts}] ${msg}\n`, "utf8");
-      } catch {
-        // ignore log write error
-      }
-    }
-  };
-
-  const repoName = repoItem.repo || (repoItem.path ? path.basename(repoItem.path) : "");
-  const repoPath = repoItem.path || (repoName ? `/srv/workspace/${repoName}` : "/srv/workspace");
-
-  const placeholders = buildConflictPlaceholders(repoItem, conflictData);
-  const cmdTemplate = options.conflictDispatchCmd || options.dispatchCmd;
-  if (!cmdTemplate) {
-    return {
-      success: false,
-      durationMs: 0,
-      message: "未指定冲突消解派发命令模版 (--dispatch-cmd 或 --conflict-dispatch-cmd)",
-    };
-  }
-
-  const renderedCmd = renderTemplate(cmdTemplate, placeholders, { escapeQuotes: true });
-  writeLog(
-    `[CONFLICT_DISPATCH] 派发冲突消解任务 -> 仓库: ${repoName}, 冲突文件数: ${placeholders.conflictCount}`
-  );
-
-  try {
-    if (dispatchFn) {
-      await dispatchFn(renderedCmd, placeholders);
-    } else {
-      await triggerDispatch(renderedCmd);
-    }
-  } catch (err: any) {
-    writeLog(`[ERROR] 仓库 ${repoName} 冲突消解任务派发异常: ${err.message}`);
-    return {
-      success: false,
-      durationMs: nowFn() - startTime,
-      message: `冲突派发执行异常: ${err.message}`,
-    };
-  }
-
-  // 轮询等待冲突状态解除与分支同步成功
-  let isResolved = false;
-  let isTimedOut = false;
-
-  while (!isResolved && !isTimedOut) {
-    await sleepFn(intervalMs);
-
-    const elapsed = nowFn() - startTime;
-    if (elapsed >= timeoutMs) {
-      isTimedOut = true;
-      break;
-    }
-
-    try {
-      const syncStatus = await queryRemoteSync(profile, repoPath, execFn);
-      if (syncStatus.status === "success") {
-        isResolved = true;
-        break;
-      }
-    } catch {
-      // 网络抖动或冲突编辑过程中允许继续轮询
-    }
-  }
-
-  const durationMs = nowFn() - startTime;
-
-  if (isResolved) {
-    writeLog(
-      `[CONFLICT_RESOLVED] 仓库 ${repoName} 冲突已成功消解并完成分支同步 (耗时: ${formatDuration(durationMs)})`
-    );
-    return {
-      success: true,
-      durationMs,
-      message: "合并冲突已由智能体成功消解",
-    };
-  }
-
-  writeLog(`[CONFLICT_TIMEOUT] 仓库 ${repoName} 冲突消解超时 (${timeoutVal} 分钟)`);
-  return {
-    success: false,
-    durationMs,
-    message: `等待冲突消解超时 (${timeoutVal} 分钟)，未检测到分支同步成功`,
-  };
-}
-
-/**
  * 核心调度流水线（支持单仓代码巡检、系统知识库全局聚合与待审池巡检三阶段调度）
  */
 export async function runPipeline(
@@ -1645,11 +1361,7 @@ export async function runPipeline(
   const timeoutMs = timeoutVal * 60 * 1000;
   const intervalMs = intervalVal * 1000;
 
-  const processRepoDispatch = async (
-    repoItem: any,
-    placeholders: Record<string, any>,
-    extraRepoResultProps: Partial<RepoResult> = {}
-  ) => {
+  const processRepoDispatch = async (repoItem: any, placeholders: Record<string, any>) => {
     const repoName = placeholders.repo;
     const targetCommit = placeholders.to;
     const repoType = placeholders.repoType || "code";
@@ -1696,7 +1408,6 @@ export async function runPipeline(
         targetCommit,
         durationMs: nowFn() - repoStartTime,
         message: `派发执行异常: ${err.message}`,
-        ...extraRepoResultProps,
       });
       return;
     }
@@ -1740,7 +1451,6 @@ export async function runPipeline(
         targetCommit,
         durationMs,
         message: `检查点已成功推进至 ${targetCommit || "最新水位"}`,
-        ...extraRepoResultProps,
       });
     } else {
       failedCount++;
@@ -1753,7 +1463,6 @@ export async function runPipeline(
         targetCommit,
         durationMs,
         message: `等待检查点推进超时 (${timeoutVal} 分钟)，未检测到 ${targetCommit || "推进记录"}`,
-        ...extraRepoResultProps,
       });
     }
   };
@@ -1787,99 +1496,8 @@ export async function runPipeline(
         message: "远端检查点已对齐，无待核验代码变更",
       });
     } else {
-      let conflictResolved = false;
-      let conflictFiles: string[] | undefined;
-      let conflictDurationMs: number | undefined;
-
-      if (options.autoSync && !options.dryRun) {
-        writeLog(`[SYNC] 对仓库 ${repoName} (code) 执行前置分支同步核验...`);
-        try {
-          const syncRes = await queryRemoteSync(profile, repoItem.path, execFn);
-          if (syncRes.status === "conflict") {
-            conflictFiles = Array.isArray(syncRes.conflictFiles) ? syncRes.conflictFiles : [];
-            writeLog(`[CONFLICT] 仓库 ${repoName} 存在合并冲突，涉及文件: ${(conflictFiles ?? []).join(", ")}`);
-
-            const conflictOutcome = await resolveConflictWithPolling(
-              options,
-              repoItem,
-              syncRes,
-              hooks
-            );
-            conflictDurationMs = conflictOutcome.durationMs;
-
-            if (!conflictOutcome.success) {
-              failedCount++;
-              results.push({
-                repo: repoName,
-                path: repoItem.path,
-                repoType: "code",
-                status: "failed",
-                targetCommit: repoItem.to || "",
-                durationMs: conflictOutcome.durationMs,
-                message: conflictOutcome.message,
-                conflictFiles: conflictFiles ?? undefined,
-                conflictResolved: false,
-                conflictDurationMs,
-              });
-              continue;
-            }
-
-            conflictResolved = true;
-            writeLog(`[CONFLICT] 仓库 ${repoName} 冲突已消解，继续后续知识维护流程`);
-          } else if (syncRes.status === "dirty_worktree") {
-            failedCount++;
-            writeLog(`[ERROR] 仓库 ${repoName} 工作区存在未提交修改，同步中止`);
-            results.push({
-              repo: repoName,
-              path: repoItem.path,
-              repoType: "code",
-              status: "failed",
-              targetCommit: repoItem.to || "",
-              durationMs: 0,
-              message: `工作区存在未提交修改: ${syncRes.message || "dirty_worktree"}`,
-            });
-            continue;
-          } else if (syncRes.status === "error") {
-            failedCount++;
-            writeLog(`[ERROR] 仓库 ${repoName} 分支同步异常: ${syncRes.message}`);
-            results.push({
-              repo: repoName,
-              path: repoItem.path,
-              repoType: "code",
-              status: "failed",
-              targetCommit: repoItem.to || "",
-              durationMs: 0,
-              message: `分支同步失败: ${syncRes.message || "sync error"}`,
-            });
-            continue;
-          } else {
-            writeLog(`[SYNC] 仓库 ${repoName} 分支同步成功（无冲突）`);
-          }
-        } catch (err: any) {
-          failedCount++;
-          writeLog(`[ERROR] 仓库 ${repoName} 前置分支同步调用异常: ${err.message}`);
-          results.push({
-            repo: repoName,
-            path: repoItem.path,
-            repoType: "code",
-            status: "failed",
-            targetCommit: repoItem.to || "",
-            durationMs: 0,
-            message: `分支同步调用异常: ${err.message}`,
-          });
-          continue;
-        }
-      }
-
-      const placeholders = buildPlaceholders(repoItem, {
-        conflictResolved,
-        ...(conflictFiles ? { conflictFiles: conflictFiles.join(", ") } : {}),
-      });
-      await processRepoDispatch(repoItem, placeholders, {
-        ...(conflictResolved ? { conflictResolved: true } : {}),
-        ...(conflictFiles ? { conflictFiles } : {}),
-        ...(conflictDurationMs !== undefined ? { conflictDurationMs } : {}),
-      });
+      const placeholders = buildPlaceholders(repoItem);
+      await processRepoDispatch(repoItem, placeholders);
     }
   }
 

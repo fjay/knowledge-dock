@@ -97,31 +97,6 @@
               "/var/log/knowledge-pipeline.log",
               "maintenance-pipeline.log"
             ]
-          },
-          "autoSync": {
-            "type": "boolean",
-            "description": "Automatically run branch synchronization (maintenance.sync) before repository inspection and dispatch a dedicated agent on merge conflicts with polling until resolution (default: false)",
-            "default": false,
-            "examples": [
-              false,
-              true
-            ]
-          },
-          "conflictDispatchCmd": {
-            "type": "string",
-            "description": "Optional specialized agent dispatch command template for resolving merge conflicts (falls back to dispatchCmd if omitted)",
-            "examples": [
-              "ad run my-agent.dispatch --profile skm -- repo=\"{{repo}}\" prompt=\"{{prompt}}\""
-            ]
-          },
-          "conflictTimeout": {
-            "type": "number",
-            "description": "Timeout in minutes for waiting single repository conflict resolution (default: 10)",
-            "default": 10,
-            "examples": [
-              10,
-              5
-            ]
           }
         }
       },
@@ -235,21 +210,6 @@
                 "message": {
                   "type": "string",
                   "description": "Human-readable summary or error message"
-                },
-                "conflictResolved": {
-                  "type": "boolean",
-                  "description": "Whether a merge conflict was detected and successfully resolved by an agent"
-                },
-                "conflictFiles": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  },
-                  "description": "List of conflicting files detected during branch synchronization"
-                },
-                "conflictDurationMs": {
-                  "type": "integer",
-                  "description": "Elapsed time in milliseconds for conflict resolution"
                 }
               }
             }
