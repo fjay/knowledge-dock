@@ -155,6 +155,19 @@ ad run files.write --input '{"path":"notes/task.md","content":"待办事项清�
 ad run files.edit --input '{"path":"notes/task.md","targetContent":"清单","replacementContent":"汇总"}'
 ```
 
+#### 外部文件与管道输入调用（大文件与复杂多行推荐）
+
+针对包含换行、代码块或引号转义敏感的大型文档写入与替换，推荐将入参保存为临时 JSON 文件并通过 `--input-file`（缩写 `-f`）传递，彻底避开终端引号转义问题：
+
+```bash
+# 从 JSON 文件读取入参
+ad run files.write --input-file /tmp/write-task.json
+ad run files.edit -f /tmp/edit-task.json
+
+# 通过标准输入管道流式传入
+cat /tmp/write-task.json | ad run files.write -f -
+```
+
 ### 构建与独立分发
 
 - **默认构建（依赖宿主环境）**：

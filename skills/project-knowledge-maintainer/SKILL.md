@@ -46,12 +46,13 @@ metadata:
   - **JSON 数组直接赋值语法**：使用 `:=` 赋值操作符直接传入 JSON 数组字符串，例如 `paths:='["src", "docs"]'`。
 - **嵌套对象传参规则**：通过点号连接各层级属性名，例如 `metadata.author="agent" metadata.version:=2`。
 - **模式互斥红线**：扁平参数、`--input <json>` 与 `--input-file <path>` 严格互斥，严禁混用。
+- **复杂大文本文件入参建议**：简单标量参数（单行路径、关键词、数值或开关）保留使用扁平参数；但针对 `files.write` 写入完整 Markdown 文档、多行配置或大文件，以及 `files.edit` 替换大段多行代码、包含单双引号、反引号或美元符号等复杂文本时，强烈建议将入参写入临时 JSON 文件，并使用 `--input-file <path>` 传递（例如 `ad run workspace/files.write --profile skm --input-file /tmp/write-input.json`），彻底避开终端引号与换行转义问题。
 
 ### 工作区读写、编辑与审查工具（`--profile skm`）
 - `search.rg`：全工作区跨仓或单仓代码与知识库正则及字面量检索。若限定多路径搜索，必须使用数组索引语法传递，例如 `paths.0="src" paths.1="docs"`。
 - `files.read`：文本分段直读文档或源码，首行附带起止行元数据。
-- `files.write`：文本安全写入，自动创建缺失父目录，支持覆盖控制。
-- `files.edit`：局部受控精准编辑，支持起止行范围限定与多重匹配防冲突保护。
+- `files.write`：文本安全写入，自动创建缺失父目录，支持覆盖控制。简单单行内容支持扁平参数（`content="..."`）；大文件、完整 Markdown 文档或复杂多行文本推荐使用 `--input-file <path>` 传递 JSON 文件入参，规避终端转义错误。
+- `files.edit`：局部受控精准编辑，支持起止行范围限定与多重匹配防冲突保护。简单单行替换支持扁平参数；多行大文本块或包含引号等特殊字符的替换内容推荐使用 `--input-file <path>` 传递，杜绝转义截断。
 - `files.list`：受控目录层级浏览。
 - `links.verify`：文档链接与引用有效性校验，检测相对路径死链、图片缺失与失效标题锚点。**核心交付门禁**：在任何模式下完成文档新建（`files.write`）或修改（`files.edit`）后，均须就地运行 `links.verify` 执行死链扫描；若返回存在断链（`brokenCount > 0`），必须结合 `brokenLinks` 清单使用 `files.edit` 立即就地自愈修复，直至断链数为零（`brokenCount === 0`）方可交付或推进流程。
 - `bash.exec`：终端命令直接执行，用于执行版本状态查看、差异核验、改动回滚与测试验证（如 `git status`、`git diff`、`git restore .`、`npm test`）。执行输出直接映射为 `content` 原生终端输出流，退出码独立输出至 stderr。

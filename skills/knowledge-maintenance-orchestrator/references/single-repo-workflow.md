@@ -77,8 +77,10 @@
 - 常用受控维护工具动作：
   - 全文检索：`ad run workspace/search.rg --profile skm -- pattern="<keyword>" paths.0="/srv/workspace/<path>/src" paths.1="/srv/workspace/<path>/docs"`
   - 分段直读：`ad run workspace/files.read --profile skm -- path="/srv/workspace/<path>" startLine:=1 maxLines:=2000`
-  - 局部编辑：`ad run workspace/files.edit --profile skm -- path="/srv/workspace/<path>" targetContent="<old>" replacementContent="<new>"`
-  - 安全写入：`ad run workspace/files.write --profile skm -- path="/srv/workspace/<path>" content="<content>"`
+  - 局部编辑（简单单行）：`ad run workspace/files.edit --profile skm -- path="/srv/workspace/<path>" targetContent="<old>" replacementContent="<new>"`
+  - 局部编辑（复杂多行，推荐文件入参防转义）：`ad run workspace/files.edit --profile skm --input-file /tmp/edit-input.json`
+  - 安全写入（简单短文本）：`ad run workspace/files.write --profile skm -- path="/srv/workspace/<path>" content="<content>"`
+  - 安全写入（大文件与复杂 Markdown，推荐文件入参防转义）：`ad run workspace/files.write --profile skm --input-file /tmp/write-input.json`
   - 目录浏览：`ad run workspace/files.list --profile skm -- path="/srv/workspace/<dir>" depth:=1`
   - 终端命令与改动回滚：`ad run workspace/bash.exec --profile skm -- command="git restore ." cwd="/srv/workspace/<path>"`
 

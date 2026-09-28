@@ -93,14 +93,21 @@
 
 - **调用原则**：
   - 修改已有代码或文档时，首选 `files.edit`，提供精准的原文本块与替换文本块；
-  - 新建文档或配置时使用 `files.write`，自动按需创建缺失的父级目录。
-- **推荐调用示例（扁平参数）**：
+  - 新建文档或配置时使用 `files.write`，自动按需创建缺失的父级目录；
+  - 简单单行替换或短内容使用扁平参数；复杂多行文本、大文件或含引号特殊字符的内容强烈建议通过 `--input-file <path>` 传递 JSON 文件入参，避开终端转义错误。
+- **推荐调用示例（扁平参数与文件传参）**：
   ```bash
-  # 精准局部替换已有文件内容：
+  # 精准局部替换已有文件内容（简单单行场景）：
   ad run files.edit -- path=docs/example.md targetContent="旧版本说明" replacementContent="新版本说明"
 
-  # 安全写入新建文件（自动递归创建父目录）：
-  ad run files.write -- path=docs/guide/start.md content="# 快速指引\n\n初始化内容..."
+  # 复杂多行局部替换（推荐文件入参防转义）：
+  ad run files.edit --input-file /tmp/edit-input.json
+
+  # 安全写入新建文件（简单短文本场景）：
+  ad run files.write -- path=docs/guide/start.md content="初始化配置项"
+
+  # 大文件与完整 Markdown 安全写入（推荐文件入参防转义）：
+  ad run files.write --input-file /tmp/write-input.json
   ```
 
 ### 相对链接与锚点校验 (`links.verify`)

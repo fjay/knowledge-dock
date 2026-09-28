@@ -130,10 +130,16 @@ ad run workspace/files.list --profile sk -- path="docs/knowledge" depth:=2
 
 ### 候选文档受控投递调用
 
+简单短文本支持扁平参数；完整 Markdown 候选文档（包含元数据块与多节语义标记）强烈建议先写入临时 JSON 文件，使用 `--input-file` 传递以避开终端引号与换行转义错误：
+
 ```bash
+# 简单短文本投递（扁平参数）：
 ad run knowledge/knowledge.collect --profile sk -- \
   filename="<安全文件名标识>" \
-  content="<包含Frontmatter与语义标记节的完整Markdown正文>"
+  content="<简单Markdown正文>"
+
+# 完整候选文档投递（大文本推荐文件入参防转义）：
+ad run knowledge/knowledge.collect --profile sk --input-file /tmp/collect-input.json
 ```
 
 ---

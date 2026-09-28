@@ -15,7 +15,7 @@
   "actions": {
     "knowledge.collect": {
       "entry": "actions/knowledge-collect.ts",
-      "description": "Collect candidate markdown knowledge documents with automatic frontmatter enrichment, secure ID generation, and structured pending directory storage.",
+      "description": "Collect candidate markdown knowledge documents with automatic frontmatter enrichment, secure ID generation, and structured pending directory storage. Retains flat arguments for simple cases, and recommends passing parameters via a JSON file with --input-file <path> for multiline markdown documents with frontmatter to avoid shell quotation and escaping errors.",
       "inputSchema": {
         "type": "object",
         "required": [
@@ -24,7 +24,7 @@
         "properties": {
           "content": {
             "type": "string",
-            "description": "Markdown text content of the candidate knowledge document",
+            "description": "Markdown text content of the candidate knowledge document. Simple text supports flat arguments; for complete candidate documents with frontmatter and semantic sections, passing input via a JSON file with --input-file <path> is recommended to avoid shell escaping errors.",
             "examples": [
               "# MySQL Connection Timeout Solution\n\nWhen encountering error 2006 (HY000), adjust wait_timeout in my.cnf.",
               "---\ntitle: Kafka Lag Alert Remediation\ndomain: messaging\nrepos:\n  - order-service\ntags: [kafka, devops]\n---\n\n## Symptoms\nConsumer group lag spikes..."

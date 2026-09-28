@@ -375,7 +375,7 @@
     },
     "files.write": {
       "entry": "actions/files-write.ts",
-      "description": "Write UTF-8 text content to a file in the workspace. Supports automatic parent directory creation and overwrite control.",
+      "description": "Write UTF-8 text content to a file in the workspace. Supports automatic parent directory creation and overwrite control. Retains flat arguments for simple text (path=... content=...), and recommends passing parameters via a JSON file with --input-file <path> for large files, complete Markdown documents, or multiline text to avoid shell quotation and escaping errors.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -389,7 +389,7 @@
           },
           "content": {
             "type": "string",
-            "description": "Plain text content to write to the file",
+            "description": "Plain text content to write to the file. Simple text supports flat argument assignment; for large files, complete Markdown documents, or multiline content with quotes and special characters, passing input via a JSON file with --input-file <path> is recommended to avoid shell escaping errors.",
             "examples": [
               "console.log('hello world');\n"
             ]
@@ -444,7 +444,7 @@
     },
     "files.edit": {
       "entry": "actions/files-edit.ts",
-      "description": "Edit a file in the workspace by replacing target text content. Supports line range constraints and multiple replacements control.",
+      "description": "Edit a file in the workspace by replacing target text content. Supports line range constraints and multiple replacements control. Retains flat arguments for simple single-line replacements, and recommends passing parameters via a JSON file with --input-file <path> for multiline blocks or content containing quotes and special characters to avoid shell escaping errors.",
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -457,14 +457,14 @@
           },
           "targetContent": {
             "type": "string",
-            "description": "Exact text content to find and replace",
+            "description": "Exact text content to find and replace. Simple single-line text supports flat arguments; for multiline text or blocks containing quotes and special characters, passing via --input-file <path> is recommended to avoid shell escaping errors.",
             "examples": [
               "const foo = 1;"
             ]
           },
           "replacementContent": {
             "type": "string",
-            "description": "Replacement text content",
+            "description": "Replacement text content. Simple single-line text supports flat arguments; for multiline text or blocks containing quotes and special characters, passing via --input-file <path> is recommended to avoid shell escaping errors.",
             "examples": [
               "const foo = 2;"
             ]
