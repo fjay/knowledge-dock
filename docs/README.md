@@ -28,6 +28,8 @@ README.md (项目理解入口与总览)
  │
  ├── 系统如何架构？(逻辑架构与单端口视图) ─────> docs/architecture.md
  │
+ ├── 动作底座如何设计？(ActionDock 与硬门禁) ─> docs/action-design.md
+ │
  ├── 流程如何流转？(全生命周期与调度时序) ─────> docs/workflow.md
  │
  ├── 文档如何组织？(知识骨架与待审池格式) ─────> docs/knowledge-model.md
@@ -45,6 +47,7 @@ README.md (项目理解入口与总览)
 - **产品愿景与方案对比**：深入了解项目背景、隐性危机剖析以及与传统 RAG / Wiki 的本质区别，参见 [docs/vision.md](vision.md)；
 - **核心概念与设计原则**：查阅四大核心设计原则、单端口虚拟视图、双分支隔离模型与检查点机制权威定义，参见 [docs/concepts.md](concepts.md)；
 - **全景架构设计指南**：了解系统核心组件、逻辑架构拓扑、运行时架构与安全边界，参见 [docs/architecture.md](architecture.md)；
+- **动作体系与底座工程**：深入理解面向智能体工作空间的第一性原理、ActionDock 基础设施选型推导、单端口虚拟视图与确定性硬门禁机制，参见 [docs/action-design.md](action-design.md)；
 - **核心流程与生命周期**：掌握代码变更自维护、待审池流转闭环与三阶段流水线调度机制，参见 [docs/workflow.md](workflow.md)；
 - **知识模型与内容组织**：查阅六类标准化知识骨架结构与 Knowledge Inbox 候选标记节规范，参见 [docs/knowledge-model.md](knowledge-model.md)；
 - **智能体设计与角色矩阵**：了解贡献守门、特权维护、总控编排与只读排障助手的分工协同，参见 [docs/agent-design.md](agent-design.md)；

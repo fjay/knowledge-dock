@@ -172,6 +172,7 @@ flowchart TD
 
 ## 延伸阅读导航
 
+- **动作体系与底座工程解析**：深入了解面向智能体工作空间的第一性原理、传统选型反向推导、ActionDock 框架精准赋能与双平面协同契约，参见 [docs/action-design.md](action-design.md)；
 - **业务演进实战案例**：查阅支付超时状态更新驱动的多文档自演进复盘，参见 [docs/examples/payment-flow.md](examples/payment-flow.md)；
 - **知识目录模型与模板规范**：了解六类知识骨架与待审池标记节格式，参见 [docs/knowledge-model.md](knowledge-model.md)；
 - **系统部署与交付指南**：获取生产级容器部署与环境变量配置手册，参见 [docs/deployment.md](deployment.md)；
