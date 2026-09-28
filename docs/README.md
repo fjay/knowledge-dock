@@ -1,67 +1,120 @@
 # Knowledge Dock 文档体系
 
-Knowledge Dock 是为 AI 智能体与研发团队构建的自维护工程知识基础设施。系统以 Git 作为唯一事实源，通过代码变更驱动增量核验，将人工排障经验收敛至待审池缓冲流转，在云端提供权威最新只读视界，实现工程知识的全自动维护与自生长闭环。
+> Knowledge Dock 的核心使命不是建造又一座静止泛黄的文档孤岛，而是为研发团队与 AI 智能体打造一套与代码提交共生演进的自动化知识基础设施。
+
+本总览文档作为知识中枢的统一导航入口，系统梳理核心工程原则、专业术语映射、文档体系架构以及极速上手指引。
 
 ---
 
-## 核心设计理念
+## 核心工程原则与事实约束
 
-- **Git 是唯一事实源**：代码与正式知识统一纳管，不设立脱离代码的外部专有数据库；
-- **代码变化不等于知识更新**：业务代码变更仅触发核验，唯有对外业务契约与规则失效时才更新文档；
-- **人工贡献统一进入待审池**：排障经验与人工补充统一进入审核缓冲区，经源码交叉求证后转正；
-- **智能体负责整理维护**：人类工程师提供关键事实证据，智能体承接文档对齐、断链自愈与分支发布的工程开销。
+系统运转建立在客观工程规律与物理约束之上，坚决拒绝依赖不可控的概率性假设：
 
-关于四大设计原则的推导与核心术语定义，参见 [docs/concepts.md](concepts.md)。
+- **Git 是唯一事实源**：代码与正式工程知识统一纳管于 Git 版本库中，不设立脱离代码的外部独立专有数据库。知识演进与代码提交哈希强绑定，保证历史事实可追溯与可复现；
+- **代码变化只是审查信号，契约失效才是更新理由**：业务代码提交仅触发自动化增量核验。内部重构、性能调优或单测补充等未打破对外业务契约的变更，坚决不修改业务文档；
+- **双分支隔离治理模型**：统一规范表述为「双分支隔离治理模型」，主干业务分支与知识分支解耦，遇冲突安全中止并由智能体进行语义消解；
+- **检查点基线推进机制**：统一规范表述为「检查点基线推进机制」（基于提交哈希的增量扫描基准）。无文档变更时推进检查点的技术必要性在于：无论代码变更是否触发文档改动，推进基线均为标记该批次提交已通过完整审计与评估的唯一凭据；若不推进检查点，后续维护将持续对已审计代码重复发起冗余比对与全量扫描，破坏增量闭环收敛性并带来不必要的计算开销。
+- **排障经验待审池缓冲流转**：统一规范表述为「排障经验待审池」，规范候选经验结构化采集、特权审查提炼与决议归档留痕闭环。候选单元是贡献单元而非正式知识单元，严禁机械地一文一建，必须经源码交叉核验提炼后合入正式骨架；
+- **单端口虚拟视图权限隔离**：统一规范表述为「单端口虚拟视图权限隔离」（Virtual Views），基于只读查询令牌 `ACTIONDOCK_TOKEN` 与特权维护令牌 `ACTIONDOCK_AGENT_TOKEN` 在 443 端口实现细粒度动作暴露隔离，从底层免除前置反向代理网关；
+- **客户端控制平面编排**：统一规范表述为「客户端控制平面」（纯本地控制动作，命令行严禁附加 `--profile` 控制选项），彻底区分全局控制选项 `--profile` 与数据入参 `profile="skm"`，服务端仅保留纯粹轻量的原子 Action；
+- **确定性质量硬门禁**：统一规范表述为「零断链门禁」（`links.verify` 就地自愈）与「业务代码防污染红线」（严格收敛在 `docs/knowledge/` 目录）。断链未自愈或改动溢出文档目录时强制阻断并全量回滚。
 
 ---
 
-## 文档体系阅读路径
-
-建议根据使用场景与关注维度查阅对应专门文档：
+## 文档体系全景架构与阅读路径
 
 ```text
-README.md (项目理解入口与总览)
+README.md (知识库总览与导航入口)
  │
- ├── 为什么需要它？(痛点与为什么不是 RAG) ──────> docs/vision.md
+ ├── 方案对比与项目初衷 ──────> docs/vision.md
  │
- ├── 核心概念是什么？(四大原则与术语定义) ─────> docs/concepts.md
+ ├── 核心概念与设计原则 ──────> docs/concepts.md
  │
- ├── 系统如何架构？(逻辑架构与单端口视图) ─────> docs/architecture.md
+ ├── 逻辑架构与安全边界 ──────> docs/architecture.md
  │
- ├── 动作底座如何设计？(ActionDock 与硬门禁) ─> docs/action-design.md
+ ├── Action 体系与硬门禁 ──────> docs/action-design.md
  │
- ├── 流程如何流转？(全生命周期与调度时序) ─────> docs/workflow.md
+ ├── 全生命周期流转机制 ──────> docs/workflow.md
  │
- ├── 文档如何组织？(知识骨架与待审池格式) ─────> docs/knowledge-model.md
+ ├── 知识骨架与待审池格式 ────> docs/knowledge-model.md
  │
- ├── 智能体如何分工？(角色矩阵与协同模型) ─────> docs/agent-design.md
+ ├── 智能体角色分工矩阵 ──────> docs/agent-design.md
  │
- ├── 系统如何部署？(容器环境与安全边界) ───────> docs/deployment.md
+ ├── 流水线编排实战指南 ──────> docs/orchestration.md
  │
- ├── 日常如何运维？(基线运维与质量门禁) ───────> docs/operations.md
+ ├── 部署交付与免密连接 ──────> docs/deployment.md
  │
- └── 业务如何演进？(支付超时真实案例复盘) ─────> docs/examples/payment-flow.md
+ ├── 知识运维与门禁手册 ──────> docs/operations.md
+ │
+ └── 业务演进端到端案例 ──────> docs/examples/payment-flow.md
 ```
 
-各文档定位说明：
-- **产品愿景与方案对比**：深入了解项目背景、隐性危机剖析以及与传统 RAG / Wiki 的本质区别，参见 [docs/vision.md](vision.md)；
-- **核心概念与设计原则**：查阅四大核心设计原则、单端口虚拟视图、双分支隔离模型与检查点机制权威定义，参见 [docs/concepts.md](concepts.md)；
-- **全景架构设计指南**：了解系统核心组件、逻辑架构拓扑、运行时架构与安全边界，参见 [docs/architecture.md](architecture.md)；
-- **动作体系与底座工程**：深入理解面向智能体工作空间的设计约束、ActionDock 基础设施选型推导、单端口虚拟视图与确定性硬门禁机制，参见 [docs/action-design.md](action-design.md)；
-- **核心流程与生命周期**：掌握代码变更自维护、待审池流转闭环与三阶段流水线调度机制，参见 [docs/workflow.md](workflow.md)；
-- **知识模型与内容组织**：查阅六类标准化知识骨架结构与 Knowledge Inbox 候选标记节规范，参见 [docs/knowledge-model.md](knowledge-model.md)；
-- **智能体设计与角色矩阵**：了解贡献守门、特权维护、总控编排与只读排障助手的分工协同，参见 [docs/agent-design.md](agent-design.md)；
-- **部署与交付实战指南**：获取多仓库配置、双令牌安全基线、私有 Git 免密连接与 Docker 容器部署指引，参见 [docs/deployment.md](deployment.md)；
-- **知识运维与质量门禁**：获取检查点基线运维、待审池流转操作、零断链门禁自愈与日志审计手册，参见 [docs/operations.md](operations.md)；
-- **业务演进端到端案例**：通过支付服务新增 `PAY_TIMEOUT` 超时状态驱动多文档联动自演进的完整案例获得直观体验，参见 [docs/examples/payment-flow.md](examples/payment-flow.md)。
+### 文档定位与受众对照表
+
+| 文档名称 | 对应文件路径 | 核心受众 | 解决的核心问题与技术定位 |
+|---|---|---|---|
+| 方案对比与初衷 | [vision.md](file:///root/code/knowledge-dock/docs/vision.md) | 架构师、技术决策者 | 阐明为什么不是传统 RAG 或静态 Wiki，剖析传统工程知识失修的隐性危机 |
+| 核心概念与原则 | [concepts.md](file:///root/code/knowledge-dock/docs/concepts.md) | 全体研发人员与维护人员 | 建立四大工程设计原则与系统核心概念权威定义 |
+| 全景架构设计 | [architecture.md](file:///root/code/knowledge-dock/docs/architecture.md) | 系统架构师、安全工程师 | 阐述服务端事实平面与客户端控制平面划分、单端口虚拟视图与五条硬性不变量 |
+| 动作底座体系 | [action-design.md](file:///root/code/knowledge-dock/docs/action-design.md) | 平台工程师、智能体开发者 | 深入解析面向智能体的 Action 接口设计、传统终端选型反推与确定性系统硬门禁 |
+| 全生命周期流转 | [workflow.md](file:///root/code/knowledge-dock/docs/workflow.md) | 流程设计师、智能体架构师 | 详解代码变更驱动自维护、待审经验缓冲消费与三阶段调度流转时序 |
+| 知识内容模型 | [knowledge-model.md](file:///root/code/knowledge-dock/docs/knowledge-model.md) | 文档维护者、内容贡献者 | 规范六类标准化工程知识骨架目录结构与 Knowledge Inbox 候选文档标记节 |
+| 智能体分工协同 | [agent-design.md](file:///root/code/knowledge-dock/docs/agent-design.md) | 智能体开发者、Prompt 工程师 | 明确贡献守门、特权维护、总控编排与只读助手四类智能体的权责与协同机制 |
+| 流水线编排指南 | [orchestration.md](file:///root/code/knowledge-dock/docs/orchestration.md) | 运维工程师、流水线开发者 | 阐述客户端控制平面纯本地运行机制、三阶段拓扑、双重转义与生产执行范式 |
+| 部署与交付实战 | [deployment.md](file:///root/code/knowledge-dock/docs/deployment.md) | SRE 运维、系统管理员 | 提供单端口虚拟视图免网关部署、宿主机持久化规划、私有 Git 免密连接安全模型与排障速查 |
+| 运维规程与门禁 | [operations.md](file:///root/code/knowledge-dock/docs/operations.md) | 日常运维人员、运维智能体 | 提供检查点基线推进操作、待审池流转管理、零断链自愈与业务代码防污染回滚手册 |
+| 业务演进案例 | [examples/payment-flow.md](file:///root/code/knowledge-dock/docs/examples/payment-flow.md) | 业务研发、全体协作者 | 通过真实支付服务新增超时状态驱动多文档联动自演进全过程提供沉浸式参考 |
 
 ---
 
-## 极速上手四步路径
+## 核心专业术语表述红线与概念映射表
 
-- **连接代码仓库**：在 `server/config/repos.json` 中配置纳管仓库清单与分支对应关系；
-- **启动服务容器**：配置 `.env` 鉴权令牌并执行 `docker compose up -d --build` 启动单端口服务；
-- **建立初始基线**：在控制平面运行首次增量扫描，建立各仓库检查点基线水位；
-- **检索与排障消费**：通过单端口查询视图获取经过代码交叉核验的权威事实视界。
+| 规范专业术语 | 英文对照 / 概念标识 | 核心工程定义与不可逾越红线 |
+|---|---|---|
+| 单端口虚拟视图权限隔离 | Virtual Views | 基于只读查询令牌 `ACTIONDOCK_TOKEN` 与特权维护令牌 `ACTIONDOCK_AGENT_TOKEN` 在 443 端口实现细粒度动作暴露隔离，原生免除前置网关 |
+| 双分支隔离治理模型 | Dual-Branch Isolation | 主干业务分支与知识分支解耦，遇冲突安全中止并由智能体进行语义消解，杜绝自动化程序私自篡改业务代码 |
+| 检查点基线推进机制 | Checkpoint Baseline Advancement | 基于提交哈希的增量扫描基准。无文档变更时推进检查点的技术必要性在于：无论代码变更是否触发文档改动，推进基线均为标记该批次提交已通过完整审计与评估的唯一凭据；若不推进检查点，后续维护将持续对已审计代码重复发起冗余比对与全量扫描，破坏增量闭环收敛性并带来不必要的计算开销。 |
+| 排障经验待审池 | Troubleshooting Inbox | 规范候选经验结构化采集、特权审查提炼与决议归档留痕闭环。候选单元是贡献单元而非正式知识单元，严禁机械映射 |
+| 客户端控制平面 | Client Control Plane | 纯本地控制动作，命令行严禁附加 `--profile` 控制选项。彻底区分全局控制选项 `--profile` 与数据入参 `profile="skm"` |
+| 零断链门禁 | Zero Broken Links Gate | `links.verify` 就地自愈。正式发布前全量校验相对文件路径、图片与章节锚点，断链数必须归零方可放行 |
+| 业务代码防污染红线 | Codebase Pollution Prevention | 严格收敛在 `docs/knowledge/` 目录。正式发布前核验工作区状态，一旦改动超出知识文档目录立即强制全量回滚阻断发布 |
 
-关于完整的部署命令与配置文件说明，参见 [docs/deployment.md](deployment.md)。
+---
+
+## 极速上手路径
+
+- **配置纳管仓库清单**：
+  在宿主机 `$KNOWLEDGE_DATA_DIR/config/repos.json` 中配置业务代码仓与系统知识仓清单，明确指定主干业务分支与专属知识分支；
+- **启动单端口服务容器**：
+  在工程根目录配置 `.env` 中的强随机互斥令牌，执行 `docker compose up -d --build`，自举完成 443 端口单端口多视图服务启动；
+- **执行客户端控制平面预演**：
+  在客户端执行机软链编排包后，执行 `ad run orchestrator.pipeline -- dryRun:=true` 验证全仓检查点水位与命令模板渲染；
+- **发起端到端维护与消费**：
+  运行正式流水线完成首轮审计与检查点基线确立，外部开发人员与排障助手即可通过查询视图（`sk`）安全检索权威工程事实并追加排障经验。
+
+---
+
+## 文档体系设计总结
+
+整个 Knowledge Dock 文档体系与工程架构可以凝练为四句话：
+
+- **以 Git 为单一事实源，让工程知识与代码提交原子绑定。**
+- **单端口划分双重视界，最小特权保障安全防线。**
+- **客户端控制平面编排流水线，检查点机制驱动增量收敛。**
+- **确定性质量门禁严防污染，以受控系统驾驭概率性智能体。**
+
+---
+
+## 核心文档直达
+
+- [流水线编排实战指南](file:///root/code/knowledge-dock/docs/orchestration.md)
+- [部署与交付实战指南](file:///root/code/knowledge-dock/docs/deployment.md)
+- [知识运维与质量门禁手册](file:///root/code/knowledge-dock/docs/operations.md)
+- [全景架构设计指南](file:///root/code/knowledge-dock/docs/architecture.md)
+- [动作体系设计指南](file:///root/code/knowledge-dock/docs/action-design.md)
+- [核心概念与设计原则](file:///root/code/knowledge-dock/docs/concepts.md)
+- [核心流程与生命周期](file:///root/code/knowledge-dock/docs/workflow.md)
+- [知识模型与内容组织](file:///root/code/knowledge-dock/docs/knowledge-model.md)
+- [智能体设计指南](file:///root/code/knowledge-dock/docs/agent-design.md)
+- [产品愿景与方案对比](file:///root/code/knowledge-dock/docs/vision.md)
+- [业务演进端到端案例](file:///root/code/knowledge-dock/docs/examples/payment-flow.md)
