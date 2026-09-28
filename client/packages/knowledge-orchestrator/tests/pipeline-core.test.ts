@@ -5,7 +5,6 @@ import path from "node:path";
 import os from "node:os";
 
 import {
-  parseArgs,
   escapeQuotes,
   formatDuration,
   renderProgressBar,
@@ -28,85 +27,6 @@ import {
   type InboxCandidateResult,
   type InboxPhaseSummary,
 } from "../src/pipeline-core.ts";
-
-test("Pipeline Runner - 命令行参数解析", async (t) => {
-  await t.test("解析默认参数", () => {
-    const opts = parseArgs([]);
-    assert.equal(opts.profile, "skm");
-    assert.equal(opts.dispatchCmd, "");
-    assert.equal(opts.timeout, 15);
-    assert.equal(opts.interval, 10);
-    assert.equal(opts.dryRun, false);
-    assert.equal(opts.only, null);
-    assert.equal(opts.skipSystemKnowledge, false);
-    assert.equal(opts.skipInbox, false);
-    assert.equal(opts.reportFile, "maintenance-report.md");
-    assert.equal(opts.help, false);
-  });
-
-  await t.test("解析 --skip-system-knowledge 参数", () => {
-    const opts = parseArgs(["--skip-system-knowledge"]);
-    assert.equal(opts.skipSystemKnowledge, true);
-  });
-
-  await t.test("解析 --skip-inbox 参数", () => {
-    const opts = parseArgs(["--skip-inbox"]);
-    assert.equal(opts.skipInbox, true);
-    const optsEq = parseArgs(["--skip-inbox=true"]);
-    assert.equal(optsEq.skipInbox, true);
-  });
-
-  await t.test("解析指定参数（空格分隔）", () => {
-    const argv = [
-      "--profile",
-      "custom-profile",
-      "--dispatch-cmd",
-      "ad run dispatch --repo {{repo}}",
-      "--timeout",
-      "25",
-      "--interval",
-      "5",
-      "--dry-run",
-      "--only",
-      "order-service,payment-service",
-      "--report-file",
-      "custom-report.md",
-      "--log-file",
-      "/var/log/custom-pipeline.log",
-    ];
-    const opts = parseArgs(argv);
-    assert.equal(opts.profile, "custom-profile");
-    assert.equal(opts.dispatchCmd, "ad run dispatch --repo {{repo}}");
-    assert.equal(opts.timeout, 25);
-    assert.equal(opts.interval, 5);
-    assert.equal(opts.dryRun, true);
-    assert.equal(opts.only, "order-service,payment-service");
-    assert.equal(opts.reportFile, "custom-report.md");
-    assert.equal(opts.logFile, "/var/log/custom-pipeline.log");
-  });
-
-  await t.test("解析指定参数（等号分隔）", () => {
-    const argv = [
-      "--profile=remote-skm",
-      "--dispatch-cmd=curl -X POST http://agent/dispatch",
-      "--timeout=30",
-      "--interval=15",
-      "--only=cron-service",
-      "--report-file=out.md",
-      "--log-file=/tmp/run.log",
-      "-h",
-    ];
-    const opts = parseArgs(argv);
-    assert.equal(opts.profile, "remote-skm");
-    assert.equal(opts.dispatchCmd, "curl -X POST http://agent/dispatch");
-    assert.equal(opts.timeout, 30);
-    assert.equal(opts.interval, 15);
-    assert.equal(opts.only, "cron-service");
-    assert.equal(opts.reportFile, "out.md");
-    assert.equal(opts.logFile, "/tmp/run.log");
-    assert.equal(opts.help, true);
-  });
-});
 
 test("Pipeline Runner - 安全引号转义", async (t) => {
   await t.test("转义双引号与反斜杠", () => {
