@@ -1,150 +1,374 @@
-# 动作体系设计思考：从踩坑推导到受控智能体工作空间
+# Action 体系设计
 
-> 本文不罗列枯燥的接口字典，而是完整记录我们在设计 knowledge-dock 动作体系与选型 ActionDock 底座过程中的真实推演历程：我们遇到过哪些工程陷阱、为何否决了那些看似显而易见的传统方案，以及如何逐步构建出一套让 AI 智能体稳定运行的确定性工作空间。
+> Knowledge Dock 的 Action 层不是“把 Shell 包一层 API”，而是为 AI 智能体提供一组**可约束、可审计、可截断、可组合**的确定性操作接口。
 
----
-
-## 认知的质变：面对的操作者不再是人类
-
-构建知识库系统时，绝大多数工程师的第一直觉是沿用人类习惯的工具：终端、Shell 脚本、SSH 会话或简单的 HTTP 接口。因为人类天然具备常识、上下文联想能力、对误操作后果的生理畏惧，以及在混乱输出中一眼抓住关键信息的容错本能。
-
-但当我们真正尝试让 AI 智能体（包括自主维护智能体与只读排障助手）常态化接管知识维护时，原有的交互假设几乎全部碰壁：
-
-- **上下文预算极其昂贵且脆弱**：人类面对几万行未分页的检索日志，可以通过视觉扫视跳过；而智能体必须将所有输出灌入上下文窗口，一次未经节制的全文检索会瞬间打爆 Token 预算，带来注意力稀释甚至推理中断；
-- **自回归模型天然缺乏物理敬畏**：在智能体的注意力计算中，修改一行文档和执行一次主干代码删除没有本质区别。依赖提示词里的温柔告诫根本阻挡不住概率采样下的误操作，破坏性动作必须在工程底层被物理焊死；
-- **概率生成极易产生参数幻觉**：面对深层嵌套的接口入参，模型极易凭空捏造字段或传递越界数值，导致脆弱的通信链路频频中断。
-
-这使我们意识到：**不能把人类使用的工具直接丢给智能体。必须通过强约束的确定性工程系统，去驾驭概率采样的智能体模型。**
+本文解释 Action 体系为什么这样设计，以及这些设计如何共同保证：智能体可以完成知识维护，但不能绕过权限边界、质量门禁和仓库治理规则。
 
 ---
 
-## 方案的推导：否决四条直觉路线的心路历程
+## 1. 设计目标
 
-在确定动作体系前，我们推演并否决了四种看似最直接的实现路径：
+面向人类设计的终端工具，默认操作者能够理解上下文、识别异常输出，并主动避免高风险操作。AI 智能体并不天然具备这些可靠性，因此 Action 层需要把关键约束落实到执行系统，而不是依赖提示词。
 
-- **为什么不直接在本地跑单机维护脚本**：
-  - 最初的想法是在工程师本地克隆代码并运行脚本。但很快发现，企业级工程涵盖数十个代码仓，本地单机的磁盘、网络与算力根本吃不消多仓的高频镜像拉取与分析；
-  - 更致命的是事实源漂移：每个人本地维护一份，线上只读排障助手和外部流水线根本无法共享最新的权威视界；
-  - 本地环境天然缺乏网络权限沙箱，智能体一旦失控，本地开发者的私有密钥与非公开代码将面临全量泄露风险。
+Knowledge Dock 的 Action 体系围绕四个目标设计：
 
-- **为什么不在服务器上直接开 SSH 终端给智能体用**：
-  - 既然需要集中式环境，那在远端开个容器并通过 SSH 登录执行命令是否可行？实践证明这是一场灾难；
-  - 终端返回的是混杂 ANSI 颜色转义符、不规则换行和非标准退出码的字符流。智能体需要消耗高昂的推理成本去反序列化文本并猜测执行状态；
-  - 会话授予的是系统底层 Shell 权限，一旦失控即可横向穿透整个系统；
-  - 生产环境的 22 端口通常受到堡垒机与防火墙严防死守，根本不适合作为频繁调用的自动化接口；
-  - 在字符终端下，我们根本无法在服务端构建不可绕过的质量门禁，所有防护都只能退化为脆弱的提示词约定。
+| 目标 | 需要解决的问题 | 设计响应 |
+|---|---|---|
+| **确定性边界** | 智能体可能生成错误参数或调用高风险能力 | 使用结构化 Action、参数校验和能力白名单 |
+| **上下文可控** | 大量命令输出会快速消耗模型上下文 | 对检索、进程输出和读取范围设置配额与截断 |
+| **事实可追踪** | 外置状态容易与代码版本漂移 | 以 Git 为唯一事实源，并使用提交哈希推进检查点 |
+| **故障可隔离** | 调度、维护与查询混在一起会扩大故障半径 | 服务端提供原子能力，客户端负责批处理编排 |
 
-- **为什么不手写一套通用的网络服务**：
-  - 那么手写一个包含若干 HTTP 接口的服务呢？看似可行，但维护代价极其沉重；
-  - 消费端不仅有 HTTP 调用，客户端调度流水线需要本地命令行无缝调试，智能体需要便携的技能资产。如果手写服务，针对每种形态都需要编写大量的路由分发与适配胶水代码；
-  - 要在统一端口上划分普通只读权限与特权维护权限，开发者必须手工编写复杂的认证中间件与接口过滤逻辑，安全漏洞防不胜防；
-  - 引入传统 Web 框架还会绑定沉重的转译构建工具链与繁杂的第三方依赖，违背我们追求的极简轻量理念。
+核心原则可以概括为：
 
-- **为什么不引入外置专有知识库或数据库**：
-  - 将知识抽离存入独立的向量数据库或文档存储，立刻打破了「代码是唯一事实源」的核心原则；
-  - 代码分支重构时，外置数据库无法同步感知版本变迁，知识再次与代码脱节；
-  - Git 原生具备基于提交哈希的增量扫描能力与完整的审计追踪链，没有任何理由弃用成熟的 Git 去徒增系统状态复杂度。
+> **让模型负责判断，让系统负责约束。**
 
 ---
 
-## 底座的破局：ActionDock 框架带来的关键支撑
+## 2. 为什么不直接使用传统工具
 
-在排除上述路径后，底座框架 ActionDock 的核心能力恰好精准击中了我们的痛点：
+在确定 Action 体系前，几种常见方案都存在明显缺陷。
 
-- **原生单端口虚拟视图消除了网络复杂度**：
-  - 我们要求服务端在 443 统一端口下运行，既对外提供安全的只读服务，又对内支持完整的维护闭环；
-  - ActionDock 原生支持单端口虚拟视图技术，仅根据请求头中的令牌自动划分视界与白名单，免除了我们在前面挂载反向代理网关或自写复杂中间件的痛苦，架构极致纯粹；
-- **受控流式进程构筑了上下文物理防线**：
-  - 当智能体调用 ripgrep 全文检索或 Git 操作时，ActionDock 进程驱动在底层实时监控输出缓冲区与执行耗时；
-  - 一旦匹配达到预设配额立即终止进程并显式标记截断，从系统底层彻底消除大仓检索打爆模型上下文的风险；
-- **Node.js 原生极简底座消除了工程包袱**：
-  - 框架基于 Node.js（版本大于等于 24.12.0），原生利用类型擦除直接执行 TypeScript，结合内置轻量 HTTP 服务，完全省去了 Babel、Webpack 等编译打包步骤，冷启动毫秒级，容器镜像极其轻快；
-- **扁平调用协议消除了模型参数幻觉**：
-  - 框架采用扁平键值赋值与有限数递归校验，在底层协议上直接拦截原型污染与非法类型，智能体不需要构造脆弱的多层嵌套 JSON，调用成功率大幅提升。
+### 2.1 本地维护脚本
 
----
+本地脚本适合单仓和人工使用，但不适合作为统一的智能体运行环境：
 
-## 闭环的设计：把硬性门禁焊死在动作契约中
+- 多仓镜像、扫描和索引会持续消耗本地磁盘、网络与算力；
+- 每台机器维护独立副本，容易产生事实源漂移；
+- 线上排障助手、流水线和维护智能体无法共享同一套权威工作区；
+- 本地开发环境通常同时包含源码、凭据和其他敏感资源，权限边界难以收敛。
 
-有了底座支撑，我们开始将核心业务规程固化为确定性的动作门禁，彻底告别对智能体自觉性的依赖：
+因此，Knowledge Dock 将事实工作区集中在服务端维护。
 
-- **权限控制：单端口虚拟视图权限隔离**
-  - 统一规范表述为「单端口虚拟视图权限隔离」（Virtual Views），基于只读查询令牌 `ACTIONDOCK_TOKEN` 与特权维护令牌 `ACTIONDOCK_AGENT_TOKEN` 在 443 端口实现细粒度动作暴露隔离；
-  - 我们把能力严格切分为两重逻辑视界：
-    - 查询视界（`sk`）：仅暴露工作区检索 [search-rg.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/search-rg.ts)、分段读取 [files-read.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-read.ts)、目录浏览 [files-list.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-list.ts) 与候选投递 [knowledge-collect.ts](file:///root/code/knowledge-dock/server/packages/knowledge-inbox/actions/knowledge-collect.ts)；外部查询者与排障助手没有任何文件修改或代码提交能力；
-    - 维护视界（`skm`）：面向受信任网络内的维护智能体与调度器，才开放文件受控写入 [files-write.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-write.ts)、精准编辑 [files-edit.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-edit.ts)、受限终端执行 [bash-exec.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/bash-exec.ts) 与 Git 维护闭环动作。
-- **仓储治理：双分支隔离治理模型**
-  - 统一规范表述为「双分支隔离治理模型」，主干业务分支与知识分支解耦，遇冲突安全中止并由智能体进行语义消解；
-  - 生产业务分支（如 `main` 或 `release`）由人类团队维护，专属知识分支（`docs`）承载知识文档；
-  - 在分支同步动作 [maintenance-sync.ts](file:///root/code/knowledge-dock/server/packages/knowledge-maintenance/actions/maintenance-sync.ts) 中，若检测到代码合并冲突，程序严禁私自裁决或强推，而是立即执行 `git merge --abort` 退出并保持干净状态，交由智能体进行语义消解，杜绝破坏生产代码。
-- **增量控制：检查点基线推进机制**
-  - 统一规范表述为「检查点基线推进机制」（基于提交哈希的增量扫描基准）。无文档变更时推进检查点的技术必要性在于：无论代码变更是否触发文档改动，推进基线均为标记该批次提交已通过完整审计与评估的唯一凭据；若不推进检查点，后续维护将持续对已审计代码重复发起冗余比对与全量扫描，破坏增量闭环收敛性并带来不必要的计算开销；
-  - 扫描动作 [maintenance-list.ts](file:///root/code/knowledge-dock/server/packages/knowledge-maintenance/actions/maintenance-list.ts) 精准筛选未审提交；智能体核验完毕后，通过推进动作 [maintenance-complete.ts](file:///root/code/knowledge-dock/server/packages/knowledge-maintenance/actions/maintenance-complete.ts) 推进检查点哈希，确保增量闭环收敛。
-- **经验流转：排障经验待审池**
-  - 统一规范表述为「排障经验待审池」，规范候选经验结构化采集、特权审查提炼与决议归档留痕闭环；
-  - 我们明确将候选文档定位于贡献单元，而非正式知识存储单元；
-  - 外部经验先通过投递动作 [knowledge-collect.ts](file:///root/code/knowledge-dock/server/packages/knowledge-inbox/actions/knowledge-collect.ts) 写入待审池缓冲；特权智能体通过列表动作 [knowledge-list.ts](file:///root/code/knowledge-dock/server/packages/knowledge-inbox/actions/knowledge-list.ts) 审阅并结合源码求证属实后合入正式文档，最后调用归档动作 [knowledge-archive.ts](file:///root/code/knowledge-dock/server/packages/knowledge-inbox/actions/knowledge-archive.ts) 留存历史，彻底阻断主观孤证污染正式知识库。
-- **质量门禁与业务代码防污染红线**
-  - 统一规范表述为「零断链门禁」（`links.verify` 就地自愈）与「业务代码防污染红线」（严格收敛在 `docs/knowledge/` 目录）；
-  - 零断链门禁：正式提交前强制调用断链校验 [links-verify.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/links-verify.ts)，若存在断链立即阻断放行，智能体就地调用精准编辑 [files-edit.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-edit.ts) 修复至断链数为零；
-  - 业务代码防污染红线：文档发布动作 [maintenance-publish.ts](file:///root/code/knowledge-dock/server/packages/knowledge-maintenance/actions/maintenance-publish.ts) 在提交前强行校验暂存区改动范围，一旦检测到改动超出 `docs/knowledge/` 目录，立即执行全量回滚并阻断发布。
+### 2.2 直接开放 SSH / Shell
 
----
+Shell 的问题不是能力不足，而是能力过于宽泛。
 
-## 调度的巧思：本地控制平面与远端事实平面的双平面协同
+终端接口通常包含：
 
-另一个经过反复推演的设计，是流水线调度器的位置：**为什么调度器不在云端常驻，而是纯本地运行？**
+- 非结构化文本输出；
+- ANSI 转义符、不稳定换行和工具特有退出码；
+- 难以统一限制的命令能力；
+- 难以强制执行的质量门禁；
+- 过大的系统权限暴露面。
 
-- **统一规范表述为「客户端控制平面」**（纯本地控制动作，命令行严禁附加 `--profile` 控制选项）；
-- **守护服务端无状态高吞吐**：
-  - 流水线调度动作 [pipeline.ts](file:///root/code/knowledge-dock/client/packages/knowledge-orchestrator/actions/pipeline.ts) 需要按清单轮询多仓并长周期等待智能体回包。若将调度器打包扔到远端服务器运行，服务端将沦为有状态的批处理队列，连接与内存被长期霸占，外部查询响应将受到严重干扰；
-- **本地环境与任务派发上下文的不可替代性**：
-  - 调度器需要在本地根据执行机环境动态渲染派发模板（如通过 `dispatchCmd` 参数在本地拉起特定的子智能体命令），并落盘本地日志文件（`logFile`）便于开发者实时观测；远端容器无法感知这些本地特定上下文；
-- **故障扩散半径的物理隔离**：
-  - 本地流水线由于网络超时或单仓脚本异常退出，故障严格局限在本地单次会话中，远端 443 服务中枢依然平稳提供只读与维护服务。
+对于智能体而言，这意味着它既要理解业务任务，又要解析终端状态，还可能获得远超任务所需的权限。
 
-这里体现了 ActionDock 在命令行设计上的精妙契约：
-- 双短横线前的 `--profile` 是框架级控制选项（语义为「将本动作整体打包发往远端执行」），调度器在本地运行，命令行严禁附加该选项；
-- 双短横线后的 `profile="skm"` 仅仅是普通数据入参（指示本地调度器下游连接远端哪个特权维护视图）；
-- 本地标准执行范式：
-  ```bash
-  ad run orchestrator.pipeline -- profile="skm" \
-    logFile="/var/log/knowledge-pipeline.log" \
-    dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"' \
-    timeout:=15 interval:=10
-  ```
+Knowledge Dock 因此只暴露必要的原子 Action，并在服务端限制执行范围。
+
+### 2.3 自建通用 HTTP 服务
+
+手写 HTTP API 可以解决部分问题，但会引入另一组工程成本：
+
+- CLI、HTTP、智能体工具调用需要分别适配；
+- 只读和维护权限需要自行实现鉴权与接口过滤；
+- 进程流式输出、超时、截断、参数校验需要重复建设；
+- 工具协议与服务协议容易逐渐分叉。
+
+ActionDock 提供统一的 Action 运行模型，使同一组能力可以同时服务 CLI、远端调用和智能体。
+
+### 2.4 外置知识数据库
+
+Knowledge Dock 不把正式工程知识迁移到独立文档库或向量数据库中。
+
+原因很直接：
+
+- 正式知识需要与代码版本绑定；
+- 分支、提交、回滚和审计已经由 Git 提供；
+- 如果知识拥有另一套独立状态，代码与知识之间就会产生新的同步问题。
+
+因此，**Git 是正式知识的唯一事实源**。其他索引可以作为加速层，但不能成为权威状态。
 
 ---
 
-## 动作能力矩阵
+## 3. 为什么选择 ActionDock
 
-系统将端到端流程解构为清晰的原子动作矩阵：
+ActionDock 在 Knowledge Dock 中承担的是“受控执行底座”，关键能力与需求一一对应。
 
-| 动作标识符 | 所在子包 | 运行视界 / 平面 | 入口实现文件 | 核心职责 |
-|---|---|---|---|---|
-| `workspace/search.rg` | `knowledge-workspace` | 查询视界（`sk`） / 维护视界（`skm`） | [search-rg.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/search-rg.ts) | 基于 ripgrep 执行全文流式检索，受配额与智能截断保护 |
-| `workspace/files.read` | `knowledge-workspace` | 查询视界（`sk`） / 维护视界（`skm`） | [files-read.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-read.ts) | 文件安全分段读取，防范路径穿越与行数超限 |
-| `workspace/files.list` | `knowledge-workspace` | 查询视界（`sk`） / 维护视界（`skm`） | [files-list.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-list.ts) | 受控目录树层级与文件清单遍历 |
-| `workspace/files.write` | `knowledge-workspace` | 维护视界（`skm`） | [files-write.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-write.ts) | 受控文件全量安全写入与目录自动创建 |
-| `workspace/files.edit` | `knowledge-workspace` | 维护视界（`skm`） | [files-edit.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/files-edit.ts) | 基于精确字符串匹配的文件就地精准编辑 |
-| `workspace/bash.exec` | `knowledge-workspace` | 维护视界（`skm`） | [bash-exec.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/bash-exec.ts) | 受限工作区内部的原生命令受控执行与状态捕获 |
-| `workspace/links.verify` | `knowledge-workspace` | 维护视界（`skm`） | [links-verify.ts](file:///root/code/knowledge-dock/server/packages/knowledge-workspace/actions/links-verify.ts) | 零断链门禁校验，静态扫描相对路径与锚点 |
-| `knowledge/knowledge.collect` | `knowledge-inbox` | 查询视界（`sk`） / 维护视界（`skm`） | [knowledge-collect.ts](file:///root/code/knowledge-dock/server/packages/knowledge-inbox/actions/knowledge-collect.ts) | 收集排障经验与人工补充候选，结构化注入待审池 |
-| `knowledge/knowledge.list` | `knowledge-inbox` | 维护视界（`skm`） | [knowledge-list.ts](file:///root/code/knowledge-dock/server/packages/knowledge-inbox/actions/knowledge-list.ts) | 遍历并过滤待审池中的候选文档元数据与状态 |
-| `knowledge/knowledge.archive` | `knowledge-inbox` | 维护视界（`skm`） | [knowledge-archive.ts](file:///root/code/knowledge-dock/server/packages/knowledge-inbox/actions/knowledge-archive.ts) | 待审池候选决议归档，移至归档目录并记录处理结论 |
-| `maintenance/maintenance.sync` | `knowledge-maintenance` | 维护视界（`skm`） | [maintenance-sync.ts](file:///root/code/knowledge-dock/server/packages/knowledge-maintenance/actions/maintenance-sync.ts) | 双分支代码仓与单分支系统仓同步，冲突安全中止 |
-| `maintenance/maintenance.list` | `knowledge-maintenance` | 维护视界（`skm`） | [maintenance-list.ts](file:///root/code/knowledge-dock/server/packages/knowledge-maintenance/actions/maintenance-list.ts) | 扫描仓库自检查点以来的提交增量与受影响文件摘要 |
-| `maintenance/maintenance.publish` | `knowledge-maintenance` | 维护视界（`skm`） | [maintenance-publish.ts](file:///root/code/knowledge-dock/server/packages/knowledge-maintenance/actions/maintenance-publish.ts) | 知识分支文档提交与推送，强制校验业务代码防污染红线 |
-| `maintenance/maintenance.complete` | `knowledge-maintenance` | 维护视界（`skm`） | [maintenance-complete.ts](file:///root/code/knowledge-dock/server/packages/knowledge-maintenance/actions/maintenance-complete.ts) | 推进检查点基线水位并持久化审计记录 |
-| `orchestrator/orchestrator.pipeline` | `knowledge-orchestrator` | 客户端控制平面（纯本地执行） | [pipeline.ts](file:///root/code/knowledge-dock/client/packages/knowledge-orchestrator/actions/pipeline.ts) | 三阶段流水线调度、多仓增量巡检、模板渲染与超时轮询 |
+| Knowledge Dock 需求 | ActionDock 提供的能力 |
+|---|---|
+| 同一服务入口下区分查询与维护能力 | 单端口 Virtual Views |
+| 防止大输出占满模型上下文 | 受控流式进程、超时与输出截断 |
+| 降低模型构造复杂参数的失败率 | 扁平、可校验的 Action 参数协议 |
+| 同一能力同时支持 CLI 与远端调用 | 统一 Action 运行模型 |
+| 保持部署链路轻量 | 基于 Node.js / TypeScript 的轻量运行时 |
+
+这使 Knowledge Dock 不需要再单独维护一套工具协议、网络协议和 CLI 适配层。
 
 ---
 
-## 延伸阅读导航
+## 4. 系统边界
 
-- **全景架构设计指南**：了解系统核心组件、逻辑架构拓扑与运行时架构，参见 [architecture.md](file:///root/code/knowledge-dock/docs/architecture.md)；
-- **核心概念与设计原则**：查阅四大核心设计原则、单端口虚拟视图、双分支隔离模型与检查点机制权威定义，参见 [concepts.md](file:///root/code/knowledge-dock/docs/concepts.md)；
-- **端到端流程与生命周期**：掌握代码变更自维护、待审池流转闭环与三阶段流水线调度机制，参见 [workflow.md](file:///root/code/knowledge-dock/docs/workflow.md)；
-- **智能体设计与角色矩阵**：了解贡献守门、特权维护、总控编排与只读排障助手的分工协同，参见 [agent-design.md](file:///root/code/knowledge-dock/docs/agent-design.md)；
-- **部署与交付实战指南**：获取多仓库配置、双令牌安全基线、私有 Git 免密连接与 Docker 容器部署指引，参见 [deployment.md](file:///root/code/knowledge-dock/docs/deployment.md)；
-- **知识运维与质量门禁**：获取检查点基线运维、待审池流转操作、零断链门禁自愈与日志审计手册，参见 [operations.md](file:///root/code/knowledge-dock/docs/operations.md)。
+Action 体系分为两个平面：
+
+- **服务端事实平面**：保存代码镜像、知识分支、检查点与待审池，并提供受控原子 Action；
+- **客户端控制平面**：负责多仓巡检、任务派发、轮询和批处理调度。
+
+```mermaid
+flowchart LR
+    O["客户端控制平面<br/>knowledge-orchestrator"]
+
+    subgraph S["服务端事实平面"]
+        G["HTTPS 443"]
+        Q["查询视图 sk"]
+        M["维护视图 skm"]
+
+        W["Workspace<br/>检索 / 读取 / 编辑"]
+        K["Knowledge Inbox<br/>收集 / 审核 / 归档"]
+        T["Maintenance<br/>同步 / 扫描 / 发布 / 检查点"]
+    end
+
+    O --> G
+    G --> Q
+    G --> M
+
+    Q --> W
+    Q --> K
+
+    M --> W
+    M --> K
+    M --> T
+```
+
+这一划分的目的不是拆分代码目录，而是明确职责：
+
+> 服务端负责“事实与能力”，客户端负责“何时调用、调用哪个仓库、如何串联”。
+
+---
+
+## 5. 必须由系统保证的五条不变量
+
+这些规则不能只写在 Agent Prompt 中，而必须由 Action 契约直接保证。
+
+### 5.1 权限不变量：查询与维护能力隔离
+
+Knowledge Dock 在 HTTPS 443 单一入口下使用两套逻辑视图：
+
+| 视图 | 凭据 | 面向对象 | 能力范围 |
+|---|---|---|---|
+| `sk` | `ACTIONDOCK_TOKEN` | 查询用户、只读排障助手 | 检索、读取、目录浏览、候选经验投递 |
+| `skm` | `ACTIONDOCK_AGENT_TOKEN` | 维护智能体、调度器 | 读写、编辑、受限命令执行、同步、发布、检查点维护 |
+
+查询视图不暴露文件覆写和 Git 维护动作，因此外部调用者即使出现错误推理，也无法越过能力边界。
+
+相关实现：
+
+- [`search-rg.ts`](../server/packages/knowledge-workspace/actions/search-rg.ts)
+- [`files-read.ts`](../server/packages/knowledge-workspace/actions/files-read.ts)
+- [`files-list.ts`](../server/packages/knowledge-workspace/actions/files-list.ts)
+- [`files-write.ts`](../server/packages/knowledge-workspace/actions/files-write.ts)
+- [`files-edit.ts`](../server/packages/knowledge-workspace/actions/files-edit.ts)
+
+### 5.2 仓库不变量：业务分支与知识分支隔离
+
+纳管代码仓采用双分支模型：
+
+- `main` / `release`：业务主干，由业务研发维护；
+- `docs`：知识分支，用于承载工程知识；
+- 正式知识改动严格限制在 `docs/knowledge/`。
+
+同步过程中如果发生冲突，[`maintenance-sync.ts`](../server/packages/knowledge-maintenance/actions/maintenance-sync.ts) 必须安全中止合并，而不是自动选择一侧结果。
+
+```text
+merge success   -> 继续知识维护
+merge conflict  -> git merge --abort -> 交给智能体做语义判断
+```
+
+自动化系统负责识别冲突，智能体负责理解冲突；两者职责不能倒置。
+
+### 5.3 增量不变量：每次完成审查都推进检查点
+
+每个仓库维护一个基于提交哈希的检查点，例如：
+
+```text
+last_knowledge_checked_commit = <commit sha>
+```
+
+[`maintenance-list.ts`](../server/packages/knowledge-maintenance/actions/maintenance-list.ts) 只返回检查点之后的未审增量。
+
+完成本轮知识审查后，无论文档是否实际发生变化，都必须通过 [`maintenance-complete.ts`](../server/packages/knowledge-maintenance/actions/maintenance-complete.ts) 推进检查点。
+
+原因是：
+
+> “没有文档变更”也是一次有效的审查结论。
+
+如果不推进检查点，同一批代码会在下一轮再次被识别为未审增量，导致重复扫描和无法收敛的维护循环。
+
+### 5.4 知识入口不变量：人工经验先进入待审池
+
+外部经验不能直接写入正式知识目录。
+
+标准流程是：
+
+```mermaid
+flowchart LR
+    A["排障经验 / 人工补充"]
+    B["knowledge.collect<br/>进入待审池"]
+    C["维护智能体<br/>结合源码核验"]
+    D["提炼到 docs/knowledge/"]
+    E["knowledge.archive<br/>归档候选"]
+
+    A --> B --> C
+    C -->|核验成立| D
+    C --> E
+    D --> E
+```
+
+候选文档是**贡献单元**，不是正式知识单元。它可以被合并、拆分、改写，也可以在核验后被拒绝。
+
+相关 Action：
+
+- [`knowledge-collect.ts`](../server/packages/knowledge-inbox/actions/knowledge-collect.ts)
+- [`knowledge-list.ts`](../server/packages/knowledge-inbox/actions/knowledge-list.ts)
+- [`knowledge-archive.ts`](../server/packages/knowledge-inbox/actions/knowledge-archive.ts)
+
+### 5.5 发布不变量：零断链且不得污染业务代码
+
+发布前必须同时满足两项条件。
+
+**零断链门禁**
+
+[`links-verify.ts`](../server/packages/knowledge-workspace/actions/links-verify.ts) 校验 Markdown 内部链接、相对路径和锚点。存在断链时必须先修复，再允许发布。
+
+**业务代码防污染红线**
+
+[`maintenance-publish.ts`](../server/packages/knowledge-maintenance/actions/maintenance-publish.ts) 在提交前检查改动范围。任何超出 `docs/knowledge/` 的修改都应阻断发布并回滚。
+
+因此，“Agent 被要求不要修改业务代码”不是安全机制；**发布 Action 本身拒绝这类修改**才是安全机制。
+
+---
+
+## 6. 为什么调度器运行在本地
+
+`knowledge-orchestrator` 属于客户端控制平面，而不是服务端常驻任务。
+
+这样设计有三个原因：
+
+1. **服务端保持无状态**  
+   多仓轮询、长时间等待和任务派发不会占用服务端的长期会话资源。
+
+2. **保留本地执行上下文**  
+   调度器可以使用本机的 `dispatchCmd`、日志路径和 Agent 运行环境。
+
+3. **缩小故障半径**  
+   单次流水线失败只影响当前客户端任务，不影响服务端继续提供查询和维护 Action。
+
+入口实现：
+
+[`pipeline.ts`](../client/packages/knowledge-orchestrator/actions/pipeline.ts)
+
+### `--profile` 与 `profile=` 的区别
+
+这两个参数名称相似，但语义不同。
+
+```bash
+# 框架控制参数：
+# --profile skm 表示“把当前 Action 发到远端 skm 视图执行”
+
+ad run some.remote.action --profile skm -- key="value"
+```
+
+而本地 orchestrator 自身不应该通过 `--profile` 远端执行：
+
+```bash
+ad run orchestrator.pipeline -- \
+  profile="skm" \
+  logFile="/var/log/knowledge-pipeline.log" \
+  dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"' \
+  timeout:=15 \
+  interval:=10
+```
+
+这里的 `profile="skm"` 是普通 Action 入参，表示下游任务应连接哪个远端视图。
+
+---
+
+## 7. Action 能力矩阵
+
+### Workspace
+
+| Action | 视图 | 职责 |
+|---|---|---|
+| `workspace/search.rg` | `sk`, `skm` | 基于 ripgrep 的受控全文检索，支持输出配额与截断 |
+| `workspace/files.read` | `sk`, `skm` | 分段读取文件，限制路径与读取范围 |
+| `workspace/files.list` | `sk`, `skm` | 受控遍历目录与文件清单 |
+| `workspace/files.write` | `skm` | 受控全量写入文件 |
+| `workspace/files.edit` | `skm` | 基于精确匹配的局部编辑 |
+| `workspace/bash.exec` | `skm` | 在受限工作区执行命令并捕获状态 |
+| `workspace/links.verify` | `skm` | 校验 Markdown 相对链接与锚点 |
+
+### Knowledge Inbox
+
+| Action | 视图 | 职责 |
+|---|---|---|
+| `knowledge/knowledge.collect` | `sk`, `skm` | 将排障经验和人工补充写入待审池 |
+| `knowledge/knowledge.list` | `skm` | 查询待审候选及其状态 |
+| `knowledge/knowledge.archive` | `skm` | 归档已处理候选并记录决议 |
+
+### Maintenance
+
+| Action | 视图 | 职责 |
+|---|---|---|
+| `maintenance/maintenance.sync` | `skm` | 同步业务分支与知识分支，冲突时安全中止 |
+| `maintenance/maintenance.list` | `skm` | 获取检查点之后的未审提交与影响摘要 |
+| `maintenance/maintenance.publish` | `skm` | 发布知识变更，并执行防污染校验 |
+| `maintenance/maintenance.complete` | `skm` | 推进检查点并持久化审计结果 |
+
+### Orchestrator
+
+| Action | 平面 | 职责 |
+|---|---|---|
+| `orchestrator/orchestrator.pipeline` | 客户端控制平面 | 多仓巡检、任务派发、轮询、待审池消费和审计汇总 |
+
+---
+
+## 8. 一次维护任务的标准闭环
+
+从 Action 的角度看，一次代码变更维护可以简化为：
+
+```mermaid
+flowchart LR
+    A["maintenance.list<br/>发现未审增量"]
+    B["maintenance.sync<br/>同步知识分支"]
+    C["智能体评估<br/>知识是否失效"]
+    D["files.edit / files.write<br/>按需更新"]
+    E["links.verify<br/>零断链"]
+    F["maintenance.publish<br/>范围校验 + 发布"]
+    G["maintenance.complete<br/>推进检查点"]
+
+    A --> B --> C
+    C -->|需要更新| D --> E --> F --> G
+    C -->|无需更新| G
+```
+
+这个流程有一个重要特征：
+
+> **“是否需要修改知识”由智能体判断；“允许修改什么、何时可以发布、何时算完成”由 Action 系统决定。**
+
+这就是 Knowledge Dock Action 体系的核心边界。
+
+---
+
+## 9. 设计总结
+
+Action 层的价值不在于提供更多工具，而在于缩小智能体的自由度，使关键工程规则具备确定性。
+
+整个设计可以归纳为四句话：
+
+1. **只暴露完成任务所需的最小能力。**
+2. **把权限、输出、路径和发布范围限制在 Action 内。**
+3. **把 Git 作为知识状态、版本和审计的统一事实源。**
+4. **让服务端保持原子和稳定，把批处理编排留在客户端。**
+
+在这套边界下，智能体仍然可以完成搜索、判断、编辑和维护，但系统不需要假设它每一次推理都正确。
+
+---
+
+## 延伸阅读
+
+- [全景架构设计](architecture.md)
+- [核心概念与设计原则](concepts.md)
+- [核心流程与生命周期](workflow.md)
+- [智能体设计](agent-design.md)
+- [部署与交付](deployment.md)
+- [知识运维与质量门禁](operations.md)
