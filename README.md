@@ -1,151 +1,88 @@
 # knowledge-dock
 
-为 AI 智能体与研发团队构建的自维护工程知识中枢与智能体编排工作空间。
+代码已经发布，排障文档却仍描述旧流程。knowledge-dock 让代码提交触发知识核验：确实影响业务契约时更新文档；不影响时记录审查结论并推进检查点。人工排障经验先进入待审池，经源码核对后再写入正式知识。
 
----
-
-## 核心痛点与解决思路
-
-在基于大模型与智能体协同的高频研发体系中，工程知识库的沉淀与维护普遍面临三大致命痛点：
-
-- 知识维护依赖人工：业务代码频繁发版，开发人员很少主动维护，靠手工补录难以长期持续；
-- 本地知识容易过期：本地仓库未及时拉取最新代码，排障或代码分析时容易读到旧知识导致误诊；
-- 知识贡献缺少统一入口：生产排障与日常人工补充缺乏稳定通道进入正式知识库，直接修改正式库极易导致格式混乱与推测污染。
-
-knowledge-dock 的终极目标十分明确：
-
-> **Git 管正式知识，云主机提供最新只读视图，代码变更自动维护知识，人工贡献统一进入 Knowledge Inbox。**
-
-系统在云端提供权威只读视界，通过代码变更驱动增量核验，将人工经验收敛至待审池缓冲流转，实现工程知识的全自动维护与自生长闭环。
-
----
-
-## 系统架构与协作拓扑
-
-knowledge-dock 建立了清晰的分层控制与协作模型：
+正式知识保存在 Git 仓库中。云端工作区集中维护代码镜像，向研发人员和智能体提供检索；本地调度器按需派发知识维护任务。系统提供受控动作和调度能力，实际的语义判断与文档修改由接入的维护智能体完成。
 
 ```mermaid
-flowchart TD
-    subgraph ClientPlane ["编排控制平面 (轻量流水线调度，无大模型开销)"]
-        CLI["ad 命令行 / crontab 定时调度"]
-        Orchestrator["knowledge-orchestrator<br/>(增量扫描代码变动，按需唤醒智能体)"]
-        LocalAgent["维护智能体实例 (即用即毁)"]
-    end
-
-    subgraph ServerPlane ["服务端事实平面 (HTTPS 443 单端口)"]
-        Router["ActionDock 单端口多视图虚拟路由器"]
-        Workspace["knowledge-workspace<br/>(代码检索 / 受控编辑 / 断链校验)"]
-        Inbox["knowledge-inbox<br/>(排障经验待审池)"]
-        Maintenance["knowledge-maintenance<br/>(双分支同步 / 检查点基线推进)"]
-        Storage["持久化数据卷 (代码镜像、检查点库 global.db、待审池)"]
-    end
-
-    subgraph SkillsAsset ["智能体技能资产 (工程规范指南)"]
-        ContributorSkill["knowledge-contributor<br/>(Contributor 知识贡献入池)"]
-        MaintainerSkill["project-knowledge-maintainer<br/>(Writer / Maintainer 维护转正)"]
-    end
-
-    CLI --> Orchestrator
-    Orchestrator -->|"向服务端查询检查点基线与最新提交"| Router
-    Orchestrator -->|"发现有效增量，按需唤醒智能体"| LocalAgent
-    LocalAgent -.->|"遵循标准操作规程"| MaintainerSkill
-    LocalAgent -->|"携带特权令牌执行维护动作"| Router
-    Router --> Workspace
-    Router --> Inbox
-    Router --> Maintenance
-    Workspace --> Storage
-    Inbox --> Storage
-    Maintenance --> Storage
-    Orchestrator -->|"轮询探测检查点推进状态"| Router
+flowchart LR
+    A["业务代码提交"] --> B["检查提交与知识检查点"]
+    B --> C["维护智能体核对源码与文档"]
+    C --> D{"知识是否失效"}
+    D -->|是| E["修订知识分支并发布"]
+    D -->|否| F["保留现有文档"]
+    E --> G["推进检查点"]
+    F --> G
+    H["排障经验"] --> I["排障经验待审池"]
+    I --> C
 ```
 
-系统由三大核心平面构成：
+## 适用场景
 
-- 服务端事实平面（`server/`）：一体化运行于 Docker 容器中，基于 ActionDock 单端口多视图规范统一收敛至标准 443 端口。作为全局代码镜像与正式知识库的权威事实源，专注于提供纯粹、轻量、无状态的原子能力（双分支同步、增量扫描、检查点推进、代码检索、受控编辑与待审池收集），对外仅暴露受控的 Action 动作，不承担任何上层编排调度逻辑；
-- 编排控制平面（`client/packages/knowledge-orchestrator`）：轻量批处理流水线调度器，在当前执行机环境中运行，命令行无需附加控制选项 `--profile`。专注于多代码仓按清单巡检、比对增量差异、待审池串行消费、组装安全命令模板、派发智能体任务、探测状态并结算审计报告，可灵活适配本地开发机、独立运维调度机或 CI/CD 自动化流水线等多种执行拓扑；
-- 智能体技能资产（`skills/`）：提供标准操作规程资产，包含面向一线开发与运营人员的知识贡献助手（`skills/knowledge-contributor`）、面向代码变更与维护转正的知识中枢（`skills/project-knowledge-maintainer`）以及负责批量多仓巡检的总控编排技能（`skills/knowledge-maintenance-orchestrator`）。
+- 多仓库代码持续演进，需要定期检查工程知识是否仍与实现一致。
+- 研发和排障智能体需要查询同一份云端代码与正式知识。
+- 生产排障中出现可复用经验，需要先收集证据，再审查、去重和沉淀。
 
----
+knowledge-dock 负责维护流程与访问边界，不替代代码评审，也不保证每次智能体判断都正确。正式发布前仍需核对文档范围、链接和审查结果。
 
-## 核心特性
+## 系统组成
 
-- 单端口虚拟视图权限隔离：无需前置反向代理网关，在标准 HTTPS 443 端口依据鉴权令牌实现细粒度隔离。只读查询视图（`sk`）面向外部只读检索与受控候选投递，特权维护视图（`skm`）面向内部维护智能体开放完整受控读写能力；
-- 双分支隔离治理模型：主干业务分支由研发团队日常提交与发版，专属知识分支（`docs`）承载工程知识，文档严格收敛在 `docs/knowledge/` 目录下。分支同步遇代码级冲突立即安全中止合并，交由智能体进行语义消解；
-- 检查点基线推进机制：坚决贯彻「代码变更只触发检查，知识失效才触发更新」的核心准则。以已记录的知识是否失效为判定基准，无论是否改动文档均推进检查点水位，确保全系统增量闭环收敛；
-- 排障经验待审池缓冲闭环：遵循「缓冲入池，去重转正」策略。一线排障人员在只读视图下即可结构化提交候选经验，待审池不对外开放通用检索；由维护智能体结合代码源码交叉核验、去重提炼后合入正式库并归档留痕；
-- 零断链门禁与业务代码防污染红线：正式发布前强制执行 `links.verify` 校验，实现链接就地自愈；严格隔离业务源码，严禁在业务目录创建文档或污染主干分支。
+| 组成 | 所在位置 | 职责 |
+|---|---|---|
+| 工作区 | `server/packages/knowledge-workspace` | 检索、读取、编辑及链接检查 |
+| 排障经验待审池 | `server/packages/knowledge-inbox` | 接收候选、查询状态、记录归档决议 |
+| 仓库维护 | `server/packages/knowledge-maintenance` | 分支同步、增量扫描、发布、检查点推进 |
+| 客户端控制平面 | `client/packages/knowledge-orchestrator` | 巡检多仓、派发任务、等待结果、生成报告 |
+| 智能体技能资产 | `skills/` | 贡献预审、单仓维护和批量调度规程 |
 
----
+服务端通过 ActionDock 的单端口虚拟视图权限隔离，在 HTTPS 443 端口依据令牌暴露不同动作。查询视图 `sk` 可检索、读取和提交待审候选；维护视图 `skm` 可调用编辑和仓库维护动作。`sk` 不是完全无写入能力的视图，它只允许向待审池受控追加。
 
-## 三分钟快速上手
+## 首次运行
 
-### 准备环境与令牌
+需要 Node.js 24.12.0 及以上、Docker Compose、Git、ripgrep 和 ActionDock 命令行工具 `ad`。下列步骤以仓库根目录为当前目录。
 
-在服务端宿主机配置环境并生成高强度随机令牌：
+- 准备配置，并将仓库清单中的示例地址、分支改为实际值：
 
-```bash
-cp .env.example .env
-openssl rand -hex 32
-openssl rand -hex 32
-```
+  ```bash
+  cp .env.example .env
+  cp server/config/repos.json.example server/config/repos.json
+  openssl rand -hex 32
+  openssl rand -hex 32
+  ```
 
-编辑 `.env` 配置文件，分别填入生成的只读查询令牌与特权维护令牌（两者长度必须达到 32 字符以上且互不相同）：
+- 将两次生成的不同令牌分别填入 `.env` 的 `ACTIONDOCK_TOKEN` 和 `ACTIONDOCK_AGENT_TOKEN`，然后启动服务：
 
-```dotenv
-ACTIONDOCK_TOKEN=<生成的只读查询令牌>
-ACTIONDOCK_AGENT_TOKEN=<生成的特权维护令牌>
-PORT=443
-KNOWLEDGE_DATA_DIR=/data/knowledge
-SSH_DIR=/root/.ssh
-```
+  ```bash
+  docker compose up -d --build
+  docker compose ps
+  ```
 
-### 启动服务容器
+- 在安装了 `ad` 的执行机上注册连接。以下 `-k` 仅用于自签名证书环境；使用受信任证书时去掉它：
 
-在项目根目录下构建并启动一体化容器：
+  ```bash
+  ad profile add sk -s https://<服务地址>:443 -t <查询令牌> -k
+  ad profile add skm -s https://<服务地址>:443 -t <维护令牌> -k
+  ```
 
-```bash
-docker compose up -d --build
-```
+- 同步已配置的仓库，再查询工作区：
 
-服务启动后自动完成自举检查，统一在 443 端口对外提供单端口多视图服务。
+  ```bash
+  ad run maintenance/maintenance.sync --profile skm
+  ad run workspace/files.list --profile sk -- path="." depth:=1
+  ad run workspace/search.rg --profile sk -- pattern="PaymentStatus"
+  ```
 
-### 客户端配置与极速检索
+检索词需换成目标仓库中的真实符号。仓库清单路径、私有 Git 认证、证书及生产部署细节见[部署指南](docs/deployment.md)。仅启动服务不会自动执行维护智能体；接入和调度方式见[编排指南](docs/orchestration.md)。
 
-在执行机注册只读查询配置与特权维护配置：
+## 继续阅读
 
-```bash
-# 注册面向日常查询与排障助手的只读查询配置
-ad profile add sk -s https://<云端服务地址>:443 -t <ACTIONDOCK_TOKEN> -k -d "知识中枢只读查询服务"
+- [文档导航](docs/README.md)：按部署、使用和维护任务找资料。
+- [架构与边界](docs/architecture.md)：理解事实源、双分支、虚拟视图和当前门禁边界。
+- [知识维护流程](docs/workflow.md)：了解代码变更与候选经验如何形成闭环。
+- [示例场景](docs/examples/payment-flow.md)：查看一次业务状态变化如何影响多篇知识文档。
 
-# 注册面向维护智能体与流水线调度器的特权维护配置
-ad profile add skm -s https://<云端服务地址>:443 -t <ACTIONDOCK_AGENT_TOKEN> -k -d "知识中枢特权维护服务"
-```
+各子包 README 提供对应动作的参数、配置和本地开发命令。
 
-一行命令完成全仓代码与知识文档的毫秒级检索：
+## 许可证
 
-```bash
-ad run workspace/search.rg --profile sk -- pattern="MK40001"
-```
-
----
-
-## 深入探索
-
-关于架构设计、产品愿景、核心概念、知识模型、智能体协同、部署实战与端到端演化案例的深度规程，请参阅：
-
-- 为什么需要它与方案定位（对比 RAG / Wiki）：参见 [docs/vision.md](docs/vision.md)；
-- 核心概念与四大设计原则：参见 [docs/concepts.md](docs/concepts.md)；
-- 全景架构设计指南：组件构成、生命周期、分层解耦与视图隔离，参见 [docs/architecture.md](docs/architecture.md)；
-- 核心流程与生命周期流转：双分支增量维护、待审池流转与三阶段调度，参见 [docs/workflow.md](docs/workflow.md)；
-- 知识模型与内容组织规范：六类知识骨架与待审池语义标记节规范，参见 [docs/knowledge-model.md](docs/knowledge-model.md)；
-- 智能体体系设计与角色分工：贡献守门、特权维护与总控编排矩阵，参见 [docs/agent-design.md](docs/agent-design.md)；
-- 部署与交付实战指南：容器部署、环境变量、纳管仓库清单配置与安全基线，参见 [docs/deployment.md](docs/deployment.md)；
-- 知识全生命周期运维规程：检查点运维、质量门禁与业务代码防污染红线，参见 [docs/operations.md](docs/operations.md)；
-- 流水线编排实战指南：三阶段流水线调度、命令模板安全渲染与审计报告结算，参见 [docs/orchestration.md](docs/orchestration.md)；
-- 真实业务演进案例：支付超时状态（PAY_TIMEOUT）驱动的知识自演进，参见 [docs/examples/payment-flow.md](docs/examples/payment-flow.md)。
-
----
-
-## 开源许可证
-
-本项目遵循 MIT 开源许可证。
+项目清单 [package.json](package.json) 声明使用 MIT 许可证。
