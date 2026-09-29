@@ -111,11 +111,11 @@ export function buildSystemKnowledgePrompt(data: any): string {
     `    - ad run workspace/links.verify --profile skm -- path="${repoPath}"`,
     `  - 若有断链（brokenCount > 0）必须就地修复至零断链（brokenCount === 0）方可放行。`,
     `- 统一发布与推进检查点水位（绝对交付标志）：`,
-    `  - 系统知识库修改必须直接提交并推送到 master 分支：`,
+    `  - 系统知识库修改必须直接提交并推送到 ${branch} 分支：`,
     `    - 有文档改动时调用：ad run maintenance/maintenance.publish --profile skm -- path="${repoPath}" repoType="system_knowledge" message="docs(system): sync domain knowledge and cross-service flows"`,
     `  - 无论文档是否修改，最后必须调用检查点推进动作（绝对交付标志）：`,
-    `    - 文档有更新：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="docs_updated" summary="<系统知识更新说明>"`,
-    `    - 文档无需更新：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="no_change_needed" summary="<系统级跨仓契约与全局领域未失效，无需更新>"`,
+    `    - 文档有更新：publish 提交后会在 ${branch} 分支生成全新提交，必须将 publish 出参返回的 commit 哈希（或当前 HEAD）传入 commit 参数：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="<publish出参commit哈希或当前HEAD>" actionTaken="docs_updated" summary="<系统知识更新说明>"`,
+    `    - 文档无需更新：未产生新提交时沿用目标检查点：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="no_change_needed" summary="<系统级跨仓契约与全局领域未失效，无需更新>"`,
   ];
 
   return lines.join("\n");

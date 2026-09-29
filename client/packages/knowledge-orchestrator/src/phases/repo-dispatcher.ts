@@ -101,13 +101,13 @@ export async function dispatchRepo(
     }
 
     try {
-      const currentStatus = await queryRemoteList(profile, repoItem.path, execFn);
+      const currentStatus = await queryRemoteList(profile, repoItem.path, execFn, repoItem.branch);
       if (isRepoCompleted(currentStatus, targetCommit, { dispatchedAt: repoStartTime })) {
         isFinished = true;
         break;
       }
-    } catch {
-      // 网络抖动容错，等待下个周期
+    } catch (err: any) {
+      writeLog(`[WARN] 仓库 ${repoName} 检查点状态轮询异常: ${err.message || String(err)}`);
     }
   }
 

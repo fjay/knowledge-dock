@@ -8,12 +8,28 @@ export function isRepoCompleted(
 ): boolean {
   if (!statusResult) return false;
   const data = statusResult.data || statusResult;
+  if (!data || typeof data !== "object") return false;
 
-  // 1. 若指定了任务触发时间戳且远端存在检查点推进时间，判定是否在触发后完成推进
-  if (options.dispatchedAt && data.checkpointUpdatedAt) {
+  if (data.status === "error") {
+    return false;
+  }
+
+  const dispatchedAt =
+    typeof options.dispatchedAt === "number"
+      ? options.dispatchedAt
+      : options.dispatchedAt
+        ? new Date(options.dispatchedAt).getTime()
+        : undefined;
+
+  // 1. 若指定了任务触发时间戳且远端存在检查点推进时间，基于推进时间判定
+  if (dispatchedAt !== undefined && !Number.isNaN(dispatchedAt) && data.checkpointUpdatedAt) {
     const updatedTime = new Date(data.checkpointUpdatedAt).getTime();
-    if (!Number.isNaN(updatedTime) && updatedTime >= options.dispatchedAt) {
-      return true;
+    if (!Number.isNaN(updatedTime)) {
+      if (updatedTime >= dispatchedAt) {
+        return true;
+      }
+      // 检查点更新时间早于任务派发时间，说明尚未完成本次推进，防止因 targetCommit 恰好等于历史 from 而被提前放行
+      return false;
     }
   }
 
@@ -27,12 +43,12 @@ export function isRepoCompleted(
   }
 
   // 3. 针对未指定 dispatchedAt 的常规对齐判断
-  if (!options.dispatchedAt) {
+  if (dispatchedAt === undefined || Number.isNaN(dispatchedAt)) {
     if (data.status === "upToDate") {
       return true;
     }
 
-    if (data.hasChanges === false && data.status !== "error") {
+    if (data.hasChanges === false) {
       return true;
     }
   }

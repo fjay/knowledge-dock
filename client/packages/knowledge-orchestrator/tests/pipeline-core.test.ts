@@ -333,6 +333,9 @@ test("Pipeline Runner - 系统知识库全局维护提示词生成 (buildSystemK
     assert.ok(prompt.includes("ad run workspace/links.verify --profile skm"));
     assert.ok(prompt.includes("ad run maintenance/maintenance.publish --profile skm -- path=\"/srv/workspace/system-knowledge\" repoType=\"system_knowledge\""));
     assert.ok(prompt.includes("ad run maintenance/maintenance.complete --profile skm -- path=\"/srv/workspace/system-knowledge\""));
+    assert.ok(prompt.includes("publish 出参返回的 commit 哈希（或当前 HEAD）传入 commit 参数"));
+    assert.ok(prompt.includes("commit=\"<publish出参commit哈希或当前HEAD>\""));
+    assert.ok(prompt.includes("未产生新提交时沿用目标检查点"));
   });
 
   await t.test("验证包含多子代理协同架构与主智能体统筹定位", () => {
@@ -450,6 +453,45 @@ test("Pipeline Runner - 单仓检查点推进判定", async (t) => {
       hasChanges: true,
     };
     assert.equal(isRepoCompleted(statusNotYet, "new-commit", { dispatchedAt }), false);
+
+    // 历史 commit 与 targetCommit 恰好相同但推进时间早于派发时间 -> 防止提前错误放行
+    const statusHistoricalSame = {
+      checkpointUpdatedAt: new Date(95000).toISOString(),
+      from: "target-commit",
+      to: "target-commit",
+      hasChanges: false,
+    };
+    assert.equal(isRepoCompleted(statusHistoricalSame, "target-commit", { dispatchedAt }), false);
+
+    // 系统知识仓发布新 commit 后当前 from 与旧 targetCommit 脱节，但已在派发后完成推进 -> 准确判定为完成
+    const statusNewCommitPublished = {
+      checkpointUpdatedAt: new Date(105000).toISOString(),
+      from: "brand-new-published-commit",
+      to: "brand-new-published-commit",
+      hasChanges: false,
+      status: "upToDate",
+    };
+    assert.equal(isRepoCompleted(statusNewCommitPublished, "pre-dispatch-target-commit", { dispatchedAt }), true);
+
+    // 派发后完成推进且标记为 no_change_needed -> 准确判定为完成
+    const statusNoChangeNeeded = {
+      checkpointUpdatedAt: new Date(105000).toISOString(),
+      from: "pre-dispatch-target-commit",
+      to: "pre-dispatch-target-commit",
+      actionTaken: "no_change_needed",
+      hasChanges: false,
+      status: "upToDate",
+    };
+    assert.equal(isRepoCompleted(statusNoChangeNeeded, "pre-dispatch-target-commit", { dispatchedAt }), true);
+
+    // 错误状态即便更新时间在派发之后也判定未完成
+    const statusError = {
+      checkpointUpdatedAt: new Date(105000).toISOString(),
+      from: "brand-new-published-commit",
+      status: "error",
+      message: "Git push failed",
+    };
+    assert.equal(isRepoCompleted(statusError, "pre-dispatch-target-commit", { dispatchedAt }), false);
   });
 
   await t.test("hasChanges 为 false 且非 error 状态判定完成", () => {

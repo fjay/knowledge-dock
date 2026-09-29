@@ -18,12 +18,16 @@ export function validateProfile(profile: string = "skm"): string {
 export async function queryRemoteList(
   profile: string = "skm",
   repoPath: string | null = null,
-  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
+  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec,
+  branch?: string | null
 ): Promise<any> {
   const safeProfile = validateProfile(profile);
   let cmd = `ad run maintenance.list --profile ${safeProfile} --json`;
   if (repoPath) {
     cmd += ` -- path="${escapeQuotes(repoPath)}"`;
+    if (branch) {
+      cmd += ` branch="${escapeQuotes(branch)}"`;
+    }
   }
   const { stdout } = await execFn(cmd);
   const parsed = JSON.parse(stdout);

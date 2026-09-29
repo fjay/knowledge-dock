@@ -137,11 +137,11 @@
     ```
 - 推进检查点水位（绝对交付标志）：
   - 无论是否产生实质文档改动，最后必须调用检查点推进动作：
-  - 有文档更新场景：
+  - 有文档更新场景（publish 提交后会在 master 分支生成全新提交，必须将 publish 出参返回的 commit 哈希或当前 HEAD 传入 commit 参数）：
     ```bash
-    ad run maintenance/maintenance.complete --profile skm -- path="/srv/workspace/system-knowledge" commit="<TO_COMMIT>" actionTaken="docs_updated" summary="<系统知识更新说明>"
+    ad run maintenance/maintenance.complete --profile skm -- path="/srv/workspace/system-knowledge" commit="<PUBLISHED_COMMIT_OR_HEAD>" actionTaken="docs_updated" summary="<系统知识更新说明>"
     ```
-  - 无需更新文档场景：
+  - 无需更新文档场景（未产生新提交，沿用目标检查点）：
     ```bash
     ad run maintenance/maintenance.complete --profile skm -- path="/srv/workspace/system-knowledge" commit="<TO_COMMIT>" actionTaken="no_change_needed" summary="<系统级跨仓契约与全局领域未失效，无需更新>"
     ```
@@ -171,7 +171,7 @@
   - 校验链接数：<链接数>
   - 断链数：0（已达标）
 - 检查点推进决议：
-  - 提交水位：<TO_COMMIT>
+  - 提交水位：<最新提交哈希或 TO_COMMIT>
   - 处置决议：<docs_updated / no_change_needed>
   - 推进状态：成功
 ```
