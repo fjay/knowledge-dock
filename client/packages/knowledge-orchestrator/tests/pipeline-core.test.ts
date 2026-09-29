@@ -1271,6 +1271,15 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
     assert.ok(prompt.includes("maintenance.publish"));
     assert.ok(prompt.includes("knowledge.archive"));
 
+    // 双子代理协同与版本初筛收敛要求
+    assert.ok(prompt.includes("主智能体统筹与专业子代理协同架构"));
+    assert.ok(prompt.includes("版本初筛与消歧子代理"));
+    assert.ok(prompt.includes("核心经验核验与合入子代理"));
+    assert.ok(prompt.includes("版本演进链路"));
+    assert.ok(prompt.includes("已被终版候选"));
+    assert.ok(prompt.includes("全流程全自动自闭环"));
+    assert.ok(prompt.includes("严禁在终端向用户提问或等待确认"));
+
     // 规范审计：无数字序号列表、无表情符号、无嵌套行内代码
     const lines = prompt.split("\n");
     for (const line of lines) {
@@ -1490,6 +1499,187 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
     assert.equal(summary.inboxResults[1].status, "completed");
   });
 
+  await t.test("runInboxPhase: 同源多版本候选初筛与版本收敛（前置探测跳过已归档候选）", async () => {
+    const v1 = {
+      id: "20260924-v1",
+      filename: "v1.md",
+      title: "Redis Cluster 脑裂排查 v1",
+    };
+    const v2 = {
+      id: "20260924-v2",
+      filename: "v2.md",
+      title: "Redis Cluster 脑裂排查 v2 (修正)",
+    };
+    const v3 = {
+      id: "20260924-v3",
+      filename: "v3.md",
+      title: "Redis Cluster 脑裂排查 v3 (终版)",
+    };
+
+    // 待审池初始包含同源 3 个版本
+    let pendingList = [v1, v2, v3];
+    const dispatchedList: string[] = [];
+    const loggedMessages: string[] = [];
+
+    const mockExec = async (cmd: string) => {
+      if (cmd.includes("knowledge.list")) {
+        return {
+          stdout: JSON.stringify({ ok: true, data: { items: [...pendingList] } }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    const sleepFn = async () => {
+      // 模拟 v1 派发后，AI 初筛子代理识别 v3 为终版，将历史版本 v1、v2 快速归档（duplicate），并将 v3 合入归档（accepted）
+      // 此时待审池中 v1、v2、v3 均已移出 pending 列表
+      pendingList = [];
+    };
+
+    const dispatchFn = async (cmd: string, placeholders: any) => {
+      dispatchedList.push(placeholders.candidateId);
+      return { pid: 1, output: "", exited: true };
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: 'dispatch --id="{{candidateId}}"', timeout: 5, interval: 1 },
+      {
+        execFn: mockExec,
+        dispatchFn,
+        sleepFn,
+      },
+      {
+        writeLog: (msg: string) => loggedMessages.push(msg),
+      }
+    );
+
+    // 验证待审池候选总数为 3，全部判定为已完成
+    assert.equal(summary.inboxTotal, 3);
+    assert.equal(summary.inboxCompleted, 3);
+    assert.equal(summary.inboxFailed, 0);
+    assert.equal(summary.inboxSkipped, false);
+    assert.equal(summary.inboxResults.length, 3);
+
+    // 核心断言：仅有首篇 v1 触发了实际派发！v2 与 v3 均被前置探测拦截并跳过，避免唤醒外部 AI
+    assert.deepEqual(dispatchedList, ["20260924-v1"]);
+
+    // 验证跳过的候选被正确记录为 completed，耗时为 0
+    assert.equal(summary.inboxResults[0].id, "20260924-v1");
+    assert.equal(summary.inboxResults[0].status, "completed");
+    assert.equal(summary.inboxResults[1].id, "20260924-v2");
+    assert.equal(summary.inboxResults[1].status, "completed");
+    assert.equal(summary.inboxResults[1].durationMs, 0);
+    assert.equal(summary.inboxResults[2].id, "20260924-v3");
+    assert.equal(summary.inboxResults[2].status, "completed");
+    assert.equal(summary.inboxResults[2].durationMs, 0);
+
+    // 验证日志中记录了前置收敛跳过信息
+    assert.ok(loggedMessages.some((msg) => msg.includes("[SKIP] 待审候选 20260924-v2 已被初筛或前序终版候选收敛归档，跳过派发")));
+    assert.ok(loggedMessages.some((msg) => msg.includes("[SKIP] 待审候选 20260924-v3 已被初筛或前序终版候选收敛归档，跳过派发")));
+  });
+
+  await t.test("runInboxPhase: 混合场景下多版本收敛与常规候选串行推进", async () => {
+    const candidateA = { id: "cand-a", filename: "a.md", title: "MySQL 连接池泄漏" };
+    const candB1 = { id: "cand-b1", filename: "b1.md", title: "Kafka Rebalance 优化 v1" };
+    const candB2 = { id: "cand-b2", filename: "b2.md", title: "Kafka Rebalance 优化 v2 终版" };
+    const candidateC = { id: "cand-c", filename: "c.md", title: "JVM 元空间内存溢出" };
+
+    let pendingList = [candidateA, candB1, candB2, candidateC];
+    const dispatchedList: string[] = [];
+
+    const mockExec = async (cmd: string) => {
+      if (cmd.includes("knowledge.list")) {
+        return {
+          stdout: JSON.stringify({ ok: true, data: { items: [...pendingList] } }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    let activeCandidateId = "";
+    const dispatchFn = async (cmd: string, placeholders: any) => {
+      activeCandidateId = placeholders.candidateId;
+      dispatchedList.push(placeholders.candidateId);
+      return { pid: 1, output: "", exited: true };
+    };
+
+    const sleepFn = async () => {
+      if (activeCandidateId === "cand-a") {
+        // cand-a 仅归档自身
+        pendingList = pendingList.filter((item) => item.id !== "cand-a");
+      } else if (activeCandidateId === "cand-b1") {
+        // cand-b1 派发时，初筛识别 b2 为终版，同时将 b1 和 b2 均归档移出 pending
+        pendingList = pendingList.filter((item) => item.id !== "cand-b1" && item.id !== "cand-b2");
+      } else if (activeCandidateId === "cand-c") {
+        // cand-c 仅归档自身
+        pendingList = pendingList.filter((item) => item.id !== "cand-c");
+      }
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "dispatch", timeout: 5, interval: 1 },
+      { execFn: mockExec, dispatchFn, sleepFn }
+    );
+
+    assert.equal(summary.inboxTotal, 4);
+    assert.equal(summary.inboxCompleted, 4);
+    assert.equal(summary.inboxFailed, 0);
+
+    // cand-b2 被前置跳过，派发清单仅包含 cand-a, cand-b1, cand-c
+    assert.deepEqual(dispatchedList, ["cand-a", "cand-b1", "cand-c"]);
+    const b2Result = summary.inboxResults.find((r) => r.id === "cand-b2");
+    assert.equal(b2Result?.status, "completed");
+    assert.equal(b2Result?.durationMs, 0);
+  });
+
+  await t.test("runInboxPhase: 前置探测阶段网络异常容错处理（不阻断常规派发）", async () => {
+    const candidate1 = { id: "cand-1", filename: "1.md", title: "Title 1" };
+    const candidate2 = { id: "cand-2", filename: "2.md", title: "Title 2" };
+
+    let pendingList = [candidate1, candidate2];
+    const dispatchedList: string[] = [];
+    let queryCallCount = 0;
+
+    const mockExec = async (cmd: string) => {
+      if (cmd.includes("knowledge.list")) {
+        queryCallCount++;
+        // 模拟第 3 次调用（即 cand-2 的前置探测）抛出临时网络错误
+        if (queryCallCount === 3) {
+          throw new Error("ETIMEDOUT: Connection timed out");
+        }
+        return {
+          stdout: JSON.stringify({ ok: true, data: { items: [...pendingList] } }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    let currentDispatched = "";
+    const dispatchFn = async (cmd: string, placeholders: any) => {
+      currentDispatched = placeholders.candidateId;
+      dispatchedList.push(placeholders.candidateId);
+      return { pid: 1, output: "", exited: true };
+    };
+
+    const sleepFn = async () => {
+      pendingList = pendingList.filter((item) => item.id !== currentDispatched);
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "dispatch", timeout: 5, interval: 1 },
+      { execFn: mockExec, dispatchFn, sleepFn }
+    );
+
+    assert.equal(summary.inboxTotal, 2);
+    assert.equal(summary.inboxCompleted, 2);
+    assert.equal(summary.inboxFailed, 0);
+    // 前置探测网络异常时容错继续派发，两者均成功完成
+    assert.deepEqual(dispatchedList, ["cand-1", "cand-2"]);
+  });
+
   await t.test("renderDashboard 终端看板支持待审池进度展示", () => {
     const dashboard = renderDashboard({
       total: 3,
@@ -1667,6 +1857,103 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
 
     // 验证派发包含了代码仓与待审候选
     assert.deepEqual(dispatchedCmds, ["demo-service", "20260924-p3"]);
+  });
+
+  await t.test("runPipeline 端到端三阶段调度中待审池多版本收敛闭环验证", async () => {
+    const mockRepoScan = {
+      batch: true,
+      results: [
+        {
+          repo: "demo-service",
+          path: "/srv/workspace/demo-service",
+          branch: "release",
+          status: "changed",
+          hasChanges: true,
+          from: "111",
+          to: "222",
+          commitCount: 1,
+          commits: [{ hash: "222", shortHash: "222", message: "feat: update" }],
+        },
+      ],
+    };
+
+    const candV1 = {
+      id: "20260924-v1",
+      filename: "v1.md",
+      title: "Redis Failover v1",
+    };
+    const candV2 = {
+      id: "20260924-v2",
+      filename: "v2.md",
+      title: "Redis Failover v2 终版",
+    };
+    let inboxItems = [candV1, candV2];
+
+    const dispatchedTargets: string[] = [];
+    const mockExec = async (cmd: string) => {
+      if (cmd.includes("maintenance.list")) {
+        if (!cmd.includes("-- path=")) {
+          return { stdout: JSON.stringify({ ok: true, data: mockRepoScan }), stderr: "" };
+        }
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: { repo: "demo-service", status: "upToDate", from: "222", to: "222", hasChanges: false },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("knowledge.list")) {
+        return {
+          stdout: JSON.stringify({ ok: true, data: { items: [...inboxItems] } }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    let p3Dispatched = false;
+    const sleepFn = async () => {
+      // 当首篇候选派发后，AI 初筛收敛使得 v1 和 v2 均已移出 pending
+      if (p3Dispatched) {
+        inboxItems = [];
+      }
+    };
+
+    const dispatchFn = async (cmd: string, placeholders: any) => {
+      const target = placeholders.candidateId || placeholders.repo;
+      dispatchedTargets.push(target);
+      if (placeholders.candidateId) {
+        p3Dispatched = true;
+      }
+      return { pid: 1, output: "", exited: true };
+    };
+
+    const summary = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --target {{repo}}{{candidateId}}",
+        timeout: 5,
+        interval: 1,
+      },
+      { execFn: mockExec, dispatchFn, sleepFn }
+    )) as PipelineSummary;
+
+    assert.equal(summary.success, true);
+    assert.equal(summary.total, 1);
+    assert.equal(summary.completed, 1);
+    assert.equal(summary.inboxTotal, 2);
+    assert.equal(summary.inboxCompleted, 2);
+    assert.equal(summary.inboxFailed, 0);
+
+    // 核心断言：待审池两篇候选，仅有 v1 触发实际派发，v2 自动收敛跳过
+    assert.deepEqual(dispatchedTargets, ["demo-service", "20260924-v1"]);
+
+    // 结算报告包含 2 篇候选均已闭环
+    assert.ok(summary.markdownReport.includes("- 待审候选总数：2"));
+    assert.ok(summary.markdownReport.includes("- 待审成功归档数：2"));
+    assert.ok(summary.markdownReport.includes("20260924-v1"));
+    assert.ok(summary.markdownReport.includes("20260924-v2"));
   });
 });
 

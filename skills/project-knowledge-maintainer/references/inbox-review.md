@@ -18,19 +18,35 @@ Knowledge Inbox 是所有排障经验、人工补充与修正建议进入正式�
 
 ---
 
+## 双子代理协同初筛与消费架构
+
+待审池消费由主智能体统筹调度两个专业子代理分工闭环：
+
+- **版本初筛与消歧子代理**：
+  - 核心职责：全量扫描待审池候选列表（`knowledge.list status="pending"`），基于作者、业务领域与主题词聚类分析版本演进关系（例如 v1/v2/v3 修订链）；
+  - 快速初筛与版本收敛：调阅候选文档，识别废弃声明与版本更替说明。对已被后续版本吸收或证伪的历史版本（如 v1、v2），直接调用 `knowledge.archive` 动作快速归档（决议设为 `duplicate` 或 `rejected`，说明注明“非终版，已被终版候选 <id> 吸收替代”）；
+  - 产出有效终版清单：将收敛后的有效终版候选交接给合入子代理，避免对过时版本进行重复无效的代码核验。
+- **核心经验核验与合入子代理**：
+  - 核心职责：仅聚焦初筛子代理输出的有效终版候选，深入对应代码仓检索源码核实事实；
+  - 提炼合入规范目录（`flow/`、`rule/`、`runbook/` 或 `ddl/` 语义补丁），执行 `links.verify` 零断链自愈，统一提交发布，并调用 `knowledge.archive` 将终版候选归档为 `accepted`。
+
+---
+
 ## 审核消费标准流程
 
 ```mermaid
 flowchart TD
-    A["拉取待审候选<br>(knowledge.list status=pending)"] --> B["阅读候选内容<br>(files.read / id)"]
-    B --> C["回查源码与现有知识<br>(search.rg / files.read)"]
-    C --> D{"事实核验与决议"}
-    D -->|"事实确凿且知识缺失"| E["合入正式知识库<br>(flow / rule / runbook / ddl)"]
-    E --> F["knowledge.archive<br>resolution=accepted"]
-    D -->|"已有相同记载"| G["knowledge.archive<br>resolution=duplicate"]
-    D -->|"关键证据不足/缺少对端代码"| H["knowledge.archive<br>resolution=insufficient_evidence"]
-    D -->|"结论错误/非知识问题"| I["knowledge.archive<br>resolution=rejected"]
-    F --> J["Git commit 提交 docs 分支"]
+    A["拉取待审候选<br>(knowledge.list status=pending)"] --> B["版本演进初筛与聚类<br>(梳理作者、仓库与修订链)"]
+    B -->|"历史版本已被终版吸收"| C["快速归档收敛<br>(knowledge.archive duplicate/rejected)"]
+    B -->|"有效终版候选"| D["阅读候选正文<br>(files.read / id)"]
+    D --> E["回查源码与现有知识<br>(search.rg / files.read)"]
+    E --> F{"事实核验与决议"}
+    F -->|"事实确凿且知识缺失"| G["合入正式知识库<br>(flow / rule / runbook / ddl)"]
+    G --> H["knowledge.archive<br>resolution=accepted"]
+    F -->|"已有相同记载"| I["knowledge.archive<br>resolution=duplicate"]
+    F -->|"关键证据不足/缺少对端代码"| J["knowledge.archive<br>resolution=insufficient_evidence"]
+    F -->|"结论错误/非知识问题"| K["knowledge.archive<br>resolution=rejected"]
+    H --> L["Git commit 提交 docs 分支"]
 ```
 
 ### 扫描待处理候选文档
@@ -61,10 +77,10 @@ ad run knowledge.list --profile skm -- status="pending"
   ```
 
 #### 重复候选（duplicate）
-- **判定标准**：候选文档记录的事实、错误码或规则，在现有知识库中已有完整且准确的记载。
+- **判定标准**：候选文档记录的事实、错误码或规则，在现有知识库中已有完整且准确的记载；或同源版本演进链中的历史版本，已被终版候选吸收替代。
 - **执行归档**：
   ```bash
-  ad run knowledge.archive --profile skm -- id="<id>" resolution="duplicate" note="与现有文档 <目标文档> 重复"
+  ad run knowledge.archive --profile skm -- id="<id>" resolution="duplicate" note="非终版，已被终版候选 <终版id> 吸收替代"
   ```
 
 #### 证据不足（insufficient_evidence）
@@ -75,10 +91,10 @@ ad run knowledge.list --profile skm -- status="pending"
   ```
 
 #### 拒绝采纳（rejected）
-- **判定标准**：属于个人开发环境特有失误、已废弃过时的历史遗留逻辑、或经查证与源码事实相悖。
+- **判定标准**：属于个人开发环境特有失误、已废弃过时的历史遗留逻辑、经查证与源码事实相悖；或同主题历史版本被后续终版推翻证伪。
 - **执行归档**：
   ```bash
-  ad run knowledge.archive --profile skm -- id="<id>" resolution="rejected" note="经核对源码为废弃接口，无需入库"
+  ad run knowledge.archive --profile skm -- id="<id>" resolution="rejected" note="经核对源码为废弃接口，无需入库（或：已被终版候选 <终版id> 废弃证伪）"
   ```
 
 ### 正式知识库提交

@@ -115,6 +115,32 @@ export async function runInboxPhase(
 
     reportProgress();
 
+    // 前置检查：若该候选已在前序批次中被初筛或前序终版候选收敛归档（已移出 pending），直接跳过派发并计入完成
+    if (i > 0) {
+      try {
+        const latestPending = await queryRemoteInboxList(profile, execFn);
+        const isStillPending = latestPending.some(
+          (item: any) => item.id === candidateId || item.filename === candidateFilename
+        );
+        if (!isStillPending) {
+          writeLog(`[SKIP] 待审候选 ${candidateId} 已被初筛或前序终版候选收敛归档，跳过派发`);
+          inboxCompleted++;
+          inboxResults.push({
+            id: candidateId,
+            filename: candidateFilename,
+            title: candidateTitle,
+            durationMs: 0,
+            status: "completed",
+            error: null,
+          });
+          reportProgress();
+          continue;
+        }
+      } catch {
+        // 容错处理，继续正常派发
+      }
+    }
+
     // 组装指导语模版与占位符并渲染派发命令
     const placeholders = buildInboxPlaceholders(candidate);
     const renderedCmd = options.dispatchCmd

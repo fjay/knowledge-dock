@@ -473,4 +473,85 @@ describe("orchestrator.pipeline", () => {
     assert.equal(result.inboxTotal, 0);
     assert.equal(knowledgeListQueried, false, "开启 skipInbox 时严禁调用 knowledge.list 查询待审池");
   });
+
+  it("待审池多版本候选初筛与版本收敛：前序终版候选收敛后自动跳过后续候选派发", async () => {
+    const fakeDriver = new FakeProcessDriver();
+    const dispatchedCommands: string[] = [];
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "clean-service",
+          path: "/srv/workspace/clean-service",
+          status: "upToDate",
+          hasChanges: false,
+        },
+      ],
+    };
+
+    const candV1 = {
+      id: "20260924-v1",
+      filename: "v1.md",
+      title: "Redis Failover v1",
+      path: "/srv/knowledge-inbox/pending/v1.md",
+      status: "pending",
+    };
+    const candV2 = {
+      id: "20260924-v2",
+      filename: "v2.md",
+      title: "Redis Failover v2 终版",
+      path: "/srv/knowledge-inbox/pending/v2.md",
+      status: "pending",
+    };
+    let inboxItems = [candV1, candV2];
+
+    fakeDriver.onSpawn = (handle: any, spec: any) => {
+      const cmd = spec.args[1] || spec.args.join(" ");
+
+      if (cmd.includes("maintenance.list")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: mockScanData }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
+      } else if (cmd.includes("knowledge.list")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { items: [...inboxItems] } }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
+        // 首篇候选派发后，AI 初筛并收敛，两个候选均已移出 pending
+        if (dispatchedCommands.length > 0) {
+          inboxItems = [];
+        }
+      } else {
+        dispatchedCommands.push(cmd);
+        handle.emitExit({ code: 0, signal: null });
+      }
+      handle.emitOutputClosed("natural");
+    };
+
+    const runtime = createTestRuntime({
+      platform: createTestPlatform({ processDriver: fakeDriver }),
+    });
+
+    const result = await runtime.run(pipelineAction, {
+      profile: "skm",
+      dryRun: false,
+      dispatchCmd: 'dispatch --target="{{candidateId}}"',
+      timeout: 1,
+      interval: 0.001,
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.total, 1);
+    assert.equal(result.skipped, 1);
+    assert.equal(result.inboxTotal, 2);
+    assert.equal(result.inboxCompleted, 2);
+    assert.equal(result.inboxFailed, 0);
+    assert.equal(result.inboxResults.length, 2);
+    assert.equal(result.inboxResults[0].id, "20260924-v1");
+    assert.equal(result.inboxResults[0].status, "completed");
+    assert.equal(result.inboxResults[1].id, "20260924-v2");
+    assert.equal(result.inboxResults[1].status, "completed");
+
+    // 核心验证：仅首篇 v1 触发实际派发命令，v2 被前置收敛跳过
+    assert.equal(dispatchedCommands.length, 1);
+    assert.ok(dispatchedCommands[0].includes("20260924-v1"));
+  });
 });
