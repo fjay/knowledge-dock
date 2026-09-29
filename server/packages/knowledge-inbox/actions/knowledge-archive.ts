@@ -10,6 +10,7 @@ import {
   ensureDirectory,
   findPendingCandidate,
 } from "../src/storage.ts";
+import { commitCandidateArchive } from "../src/git.ts";
 
 export type Input = ActionInput<"knowledge.archive">;
 export type Output = ActionOutput<"knowledge.archive">;
@@ -98,6 +99,13 @@ export default defineAction<Input, Output>(async (input, ctx) => {
         throw unlinkErr;
       }
     }
+
+    await commitCandidateArchive(
+      inboxRoot,
+      docId,
+      resolution,
+      ctx.log
+    );
   } catch (err: any) {
     // Clean up temporary file if write or rename failed
     try {

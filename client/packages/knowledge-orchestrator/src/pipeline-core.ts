@@ -100,6 +100,11 @@ export async function runPipeline(
   const systemRepos: any[] = [];
 
   for (const item of allRepos) {
+    if (item.repoType === "inbox") {
+      writeLog(`检测到待审池仓库 (${item.repo || item.path})，不纳入代码仓或系统知识仓，由第三阶段待审池统一处理`);
+      continue;
+    }
+
     const repoName = item.repo || (item.path ? path.basename(item.path) : "");
     const rawType = item.repoType || "";
     const repoType =

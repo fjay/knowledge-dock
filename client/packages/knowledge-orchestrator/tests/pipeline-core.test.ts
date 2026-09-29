@@ -1171,6 +1171,67 @@ test("Pipeline Runner - 两阶段调度（单仓巡检与系统知识库全局�
       }
     }
   });
+
+  await t.test("遇到 repoType 为 inbox 的仓库时不归入 codeRepos 或 systemRepos", async () => {
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "changed",
+          hasChanges: true,
+          from: "111",
+          to: "222",
+        },
+        {
+          repo: "knowledge-inbox",
+          path: "/srv/knowledge-inbox",
+          repoType: "inbox",
+          sourceBranch: "main",
+          status: "upToDate",
+          hasChanges: false,
+          to: "333",
+        },
+        {
+          repo: "system-knowledge",
+          path: "/srv/workspace/system-knowledge",
+          repoType: "system_knowledge",
+          status: "changed",
+          hasChanges: true,
+          from: "444",
+          to: "555",
+        },
+      ],
+    };
+
+    const execFn = async () => ({
+      stdout: JSON.stringify({ ok: true, data: mockScanData }),
+      stderr: "",
+    });
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dryRun: true,
+        dispatchCmd: "dispatch --repo {{repo}}",
+        skipInbox: true,
+      },
+      { execFn }
+    )) as DryRunResult;
+
+    assert.equal(result.dryRun, true);
+    // 只有 order-service 和 system-knowledge 进入了阶段一和阶段二
+    assert.equal(result.total, 2);
+    assert.equal(result.dryRunOutput.length, 2);
+    assert.equal(result.dryRunOutput[0]?.repo, "order-service");
+    assert.equal(result.dryRunOutput[1]?.repo, "system-knowledge");
+    assert.ok(
+      result.dryRunOutput.every((item) => item.repoType !== "inbox"),
+      "inbox 仓库不应出现在代码仓或系统知识仓阶段"
+    );
+  });
 });
 
 test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消费", async (t) => {

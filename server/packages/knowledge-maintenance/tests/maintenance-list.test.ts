@@ -616,4 +616,80 @@ describe("maintenance.list", () => {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     }
   });
+
+  it("batch scan filters and skips inbox repository from scan results", async () => {
+    const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), "scan-inbox-batch-"));
+    const repoCode = path.join(tmpBase, "code-repo");
+    const repoInbox = path.join(tmpBase, "inbox-repo");
+    fs.mkdirSync(repoCode, { recursive: true });
+    fs.mkdirSync(repoInbox, { recursive: true });
+
+    const configFile = path.join(tmpBase, "repos.json");
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify([
+        {
+          path: repoCode,
+          repoType: "code",
+          sourceBranch: "release",
+        },
+        {
+          path: repoInbox,
+          repoType: "inbox",
+          sourceBranch: "main",
+        },
+      ]),
+      "utf8"
+    );
+
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      const codeHeadCommit = "aaaa111122223333444455556666777788889999";
+      const scannedDirs: string[] = [];
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        const cwd = spec.cwd;
+        if (!scannedDirs.includes(cwd)) {
+          scannedDirs.push(cwd);
+        }
+
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "branch -a") {
+          handle.emitOutput("stdout", "release\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse release^{commit}") {
+          handle.emitOutput("stdout", `${codeHeadCommit}\n`);
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", "https://github.com/myorg/code-repo.git\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-list --count aaaa111122223333444455556666777788889999") {
+          handle.emitOutput("stdout", "10\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(listAction, {
+        config: configFile,
+      });
+
+      assert.equal(res.batch, true);
+      assert.equal(res.results?.length, 1);
+      assert.equal(res.results?.[0]?.path, repoCode);
+      assert.equal(res.summary?.total, 1);
+      assert.ok(!scannedDirs.includes(repoInbox), "Inbox repository must be skipped and not spawned/scanned");
+    } finally {
+      fs.rmSync(tmpBase, { recursive: true, force: true });
+    }
+  });
 });

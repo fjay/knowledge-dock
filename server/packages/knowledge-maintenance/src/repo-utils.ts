@@ -40,25 +40,39 @@ export function resolveRepoPath(
   const rawWsRoot =
     (process.env.WORKSPACE_ROOT && process.env.WORKSPACE_ROOT.trim()) ||
     (fs.existsSync("/srv/workspace") ? "/srv/workspace" : undefined);
+  const rawInboxRoot =
+    (process.env.KNOWLEDGE_INBOX_ROOT && process.env.KNOWLEDGE_INBOX_ROOT.trim()) ||
+    (fs.existsSync("/srv/knowledge-inbox") ? "/srv/knowledge-inbox" : undefined);
+
+  const allowedRoots: Array<{ root: string; realRoot: string }> = [];
   if (rawWsRoot) {
     const wsRoot = path.resolve(rawWsRoot);
-    const realWsRoot = fs.existsSync(wsRoot) ? fs.realpathSync(wsRoot) : path.resolve(wsRoot);
+    const realWsRoot = fs.existsSync(wsRoot) ? fs.realpathSync(wsRoot) : wsRoot;
+    allowedRoots.push({ root: wsRoot, realRoot: realWsRoot });
+  }
+  if (rawInboxRoot) {
+    const inboxRoot = path.resolve(rawInboxRoot);
+    const realInboxRoot = fs.existsSync(inboxRoot) ? fs.realpathSync(inboxRoot) : inboxRoot;
+    allowedRoots.push({ root: inboxRoot, realRoot: realInboxRoot });
+  }
 
-    if (
-      resolved !== wsRoot &&
-      !resolved.startsWith(wsRoot + path.sep) &&
-      resolved !== realWsRoot &&
-      !resolved.startsWith(realWsRoot + path.sep)
-    ) {
+  if (allowedRoots.length > 0) {
+    const isInsideAllowed = (p: string) =>
+      allowedRoots.some(
+        ({ root, realRoot }) =>
+          p === root ||
+          p.startsWith(root + path.sep) ||
+          p === realRoot ||
+          p.startsWith(realRoot + path.sep)
+      );
+
+    if (!isInsideAllowed(resolved)) {
       throw new MaintenanceError(`Path is outside workspace root: ${resolved}`, "PATH_FORBIDDEN", 403);
     }
 
     if (fs.existsSync(resolved)) {
       const realResolved = fs.realpathSync(resolved);
-      const isInside =
-        realResolved === realWsRoot ||
-        realResolved.startsWith(`${realWsRoot}${path.sep}`);
-      if (!isInside) {
+      if (!isInsideAllowed(realResolved)) {
         throw new MaintenanceError(
           `Path or symlink target is outside workspace root: ${resolved}`,
           "PATH_FORBIDDEN",
@@ -81,10 +95,7 @@ export function resolveRepoPath(
           const realTarget = fs.existsSync(resolvedTarget)
             ? fs.realpathSync(resolvedTarget)
             : resolvedTarget;
-          const insideTarget =
-            realTarget === realWsRoot ||
-            realTarget.startsWith(`${realWsRoot}${path.sep}`);
-          if (!insideTarget) {
+          if (!isInsideAllowed(realTarget)) {
             throw new MaintenanceError(
               `Path or symlink target is outside workspace root: ${resolved}`,
               "PATH_FORBIDDEN",
@@ -96,7 +107,7 @@ export function resolveRepoPath(
         }
       }
 
-      // 查找其最近存在的祖先目录，获取其 realpath，同样校验该祖先目录的真实物理路径必须在 realWsRoot 之下
+      // 查找其最近存在的祖先目录，获取其 realpath，同样校验该祖先目录的真实物理路径必须在 allowedRoots 之下
       let checkDir = path.dirname(resolved);
       while (!fs.existsSync(checkDir)) {
         const nextDir = path.dirname(checkDir);
@@ -105,10 +116,7 @@ export function resolveRepoPath(
       }
       if (fs.existsSync(checkDir)) {
         const realAncestor = fs.realpathSync(checkDir);
-        const insideAncestor =
-          realAncestor === realWsRoot ||
-          realAncestor.startsWith(`${realWsRoot}${path.sep}`);
-        if (!insideAncestor) {
+        if (!isInsideAllowed(realAncestor)) {
           throw new MaintenanceError(
             `Path or symlink target is outside workspace root: ${resolved}`,
             "PATH_FORBIDDEN",
@@ -158,7 +166,7 @@ export async function getRepoIdentifier(git: GitClient, resolvedPath: string): P
 export async function detectRepoType(
   git: GitClient,
   knowledgeBranchHint?: string
-): Promise<"code" | "system_knowledge"> {
+): Promise<"code" | "system_knowledge" | "inbox"> {
   if (knowledgeBranchHint) {
     return "code";
   }
@@ -283,7 +291,7 @@ export interface EnsureReposConfigOptions {
 
 export interface AutoDiscoveredRepoConfig {
   path: string;
-  repoType: "code" | "system_knowledge";
+  repoType: "code" | "system_knowledge" | "inbox";
   sourceBranch: string;
   knowledgeBranch?: string;
 }
@@ -349,6 +357,12 @@ export function ensureReposConfigFile(options?: EnsureReposConfigOptions): strin
               path: subDirPath,
               repoType: "system_knowledge",
               sourceBranch: "master",
+            });
+          } else if (nameLower.includes("inbox") || nameLower.includes("knowledge-inbox")) {
+            discovered.push({
+              path: subDirPath,
+              repoType: "inbox",
+              sourceBranch: "main",
             });
           } else {
             discovered.push({

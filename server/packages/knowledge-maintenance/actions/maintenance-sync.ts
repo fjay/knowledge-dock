@@ -12,7 +12,7 @@ export type Output = ActionOutput<"maintenance.sync">;
 interface RepoSyncConfig {
   path: string;
   url?: string;
-  repoType?: "code" | "system_knowledge";
+  repoType?: "code" | "system_knowledge" | "inbox";
   sourceBranch?: string;
   knowledgeBranch?: string;
   filterBlobNone?: boolean;
@@ -23,7 +23,7 @@ type SingleRepoResult = {
   status: "success" | "dirty_worktree" | "conflict" | "error";
   path: string;
   cloned?: boolean;
-  repoType?: "code" | "system_knowledge";
+  repoType?: "code" | "system_knowledge" | "inbox";
   sourceBranch?: string;
   knowledgeBranch?: string;
   currentCommit?: string;
@@ -141,7 +141,21 @@ async function syncSingleRepo(
 
   // 3. Resolve repository type and branch configurations
   const repoType = repoInput.repoType ?? (await detectRepoType(git, repoInput.knowledgeBranch));
-  const sourceBranch = repoInput.sourceBranch ?? (repoType === "code" ? "release" : "master");
+  let defaultSourceBranch: string;
+  if (repoType === "code") {
+    defaultSourceBranch = "release";
+  } else if (repoType === "inbox") {
+    if ((await git.refExists("refs/heads/main")) || (await git.refExists("origin/main"))) {
+      defaultSourceBranch = "main";
+    } else if ((await git.refExists("refs/heads/master")) || (await git.refExists("origin/master"))) {
+      defaultSourceBranch = "master";
+    } else {
+      defaultSourceBranch = "main";
+    }
+  } else {
+    defaultSourceBranch = "master";
+  }
+  const sourceBranch = repoInput.sourceBranch ?? defaultSourceBranch;
   const knowledgeBranch = repoType === "code" ? (repoInput.knowledgeBranch ?? "docs") : undefined;
 
   ctx.log.info(`Syncing repository (${repoType})`, {
@@ -181,9 +195,9 @@ async function syncSingleRepo(
     };
   }
 
-  // 5A. Single branch / system knowledge repository
-  if (repoType === "system_knowledge") {
-    ctx.log.info(`Switching to ${sourceBranch} for system_knowledge sync...`);
+  // 5A. Single branch / system knowledge or inbox repository
+  if (repoType === "system_knowledge" || repoType === "inbox") {
+    ctx.log.info(`Switching to ${sourceBranch} for ${repoType} sync...`);
     const localBranchExists = await git.refExists(`refs/heads/${sourceBranch}`);
     if (localBranchExists) {
       const checkoutRes = await git.run(["checkout", sourceBranch]);
@@ -236,7 +250,9 @@ async function syncSingleRepo(
       repoType,
       sourceBranch,
       currentCommit,
-      message: `Successfully synchronized system knowledge branch '${sourceBranch}' via fast-forward merge`,
+      message: repoType === "inbox"
+        ? `Successfully synchronized inbox branch '${sourceBranch}' via fast-forward merge`
+        : `Successfully synchronized system knowledge branch '${sourceBranch}' via fast-forward merge`,
     };
   }
 

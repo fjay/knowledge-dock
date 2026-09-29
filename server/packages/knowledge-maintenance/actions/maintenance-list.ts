@@ -17,7 +17,7 @@ export type Output = ActionOutput<"maintenance.list">;
 
 interface RepoScanConfig {
   path: string;
-  repoType?: "code" | "system_knowledge" | undefined;
+  repoType?: "code" | "system_knowledge" | "inbox" | undefined;
   branch?: string | undefined;
   sourceBranch?: string | undefined;
 }
@@ -27,7 +27,7 @@ type SingleRepoScanResult = {
   path: string;
   repo?: string;
   branch?: string;
-  repoType?: "code" | "system_knowledge";
+  repoType?: "code" | "system_knowledge" | "inbox";
   checkpointUpdatedAt?: string | null;
   actionTaken?: string | null;
   hasChanges: boolean;
@@ -91,7 +91,7 @@ async function scanSingleRepo(
 
     let targetBranch = repoInput.branch ?? repoInput.sourceBranch;
     if (!targetBranch) {
-      targetBranch = repoType === "code" ? "release" : "master";
+      targetBranch = repoType === "code" ? "release" : (repoType === "inbox" ? "main" : "master");
     }
     const branches = await git.listBranchNames();
 
@@ -327,6 +327,11 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   let errorCount = 0;
 
   for (const repoConfig of reposToScan) {
+    if (repoConfig.repoType === "inbox") {
+      ctx.log.info("Skipping inbox repository in maintenance.list batch scan", { path: repoConfig.path });
+      continue;
+    }
+
     ctx.log.info("Batch scanning repository", { path: repoConfig.path });
     const singleResult = await scanSingleRepo(
       {
@@ -355,7 +360,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   const hasChanges = changedCount > 0 || initialCount > 0;
 
   const summary = {
-    total: reposToScan.length,
+    total: results.length,
     changedCount,
     initialCount,
     upToDateCount,
@@ -371,7 +376,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     if (initialCount > 0) parts.push(`${initialCount} initial`);
     if (upToDateCount > 0) parts.push(`${upToDateCount} up to date`);
     if (errorCount > 0) parts.push(`${errorCount} error(s)`);
-    message = `Batch scan completed: ${parts.join(", ")} across ${reposToScan.length} repositories`;
+    message = `Batch scan completed: ${parts.join(", ")} across ${results.length} repositories`;
   }
 
   return {

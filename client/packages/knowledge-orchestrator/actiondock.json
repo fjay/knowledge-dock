@@ -186,7 +186,8 @@
                   "type": "string",
                   "enum": [
                     "code",
-                    "system_knowledge"
+                    "system_knowledge",
+                    "inbox"
                   ],
                   "description": "Repository architecture type"
                 },

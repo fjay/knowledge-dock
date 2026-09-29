@@ -14,6 +14,7 @@ import {
   normalizeAuthor,
 } from "../src/frontmatter.ts";
 import { getInboxRoot, ensureDirectory } from "../src/storage.ts";
+import { commitCandidateCollect } from "../src/git.ts";
 
 export type Input = ActionInput<"knowledge.collect">;
 export type Output = ActionOutput<"knowledge.collect">;
@@ -96,6 +97,14 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   );
 
   await fs.promises.writeFile(targetFilePath, finalContent, "utf-8");
+
+  await commitCandidateCollect(
+    inboxRoot,
+    safeFilename,
+    id,
+    String(frontmatterData.title || slug || "candidate"),
+    ctx.log
+  );
 
   ctx.log.info("Successfully collected knowledge candidate", {
     id,

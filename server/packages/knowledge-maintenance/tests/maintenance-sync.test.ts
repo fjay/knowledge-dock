@@ -1124,5 +1124,58 @@ describe("maintenance.sync", () => {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     }
   });
+
+  it("synchronizes inbox single-branch repository via ff-only merge (defaulting to main)", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-inbox-"));
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      const executedCommands: string[] = [];
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        executedCommands.push(cmd);
+
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "status --porcelain") {
+          handle.emitOutput("stdout", "");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "fetch --filter=blob:none origin" || cmd === "fetch origin") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --verify refs/heads/main" || cmd === "rev-parse --verify origin/main") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "checkout main") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "merge --ff-only origin/main") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse HEAD") {
+          handle.emitOutput("stdout", "4444555566667777888899990000111122223333\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(syncAction, {
+        path: tmpDir,
+        repoType: "inbox",
+      });
+
+      assert.equal(res.status, "success");
+      assert.equal(res.repoType, "inbox");
+      assert.equal(res.sourceBranch, "main");
+      assert.equal(res.currentCommit, "4444555566667777888899990000111122223333");
+      assert.ok(executedCommands.includes("merge --ff-only origin/main"));
+      assert.ok(res.message.includes("inbox"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 

@@ -193,7 +193,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   const results = rawResult.results.map((r) => ({
     repo: r.repo,
     path: r.path,
-    repoType: (r.repoType === "system_knowledge" ? "system_knowledge" : "code") as "code" | "system_knowledge",
+    repoType: (r.repoType === "system_knowledge" ? "system_knowledge" : r.repoType === "inbox" ? "inbox" : "code") as "code" | "system_knowledge" | "inbox",
     status: r.status,
     ...(r.targetCommit ? { targetCommit: r.targetCommit } : {}),
     durationMs: r.durationMs ?? 0,

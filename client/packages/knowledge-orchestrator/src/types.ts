@@ -32,10 +32,31 @@ export interface DryRunResult {
   inboxResults?: InboxCandidateResult[];
 }
 
+export interface RepoScanItem {
+  repo?: string;
+  path?: string;
+  repoType?: "code" | "system_knowledge" | "inbox";
+  branch?: string;
+  sourceBranch?: string;
+  status?: string;
+  hasChanges?: boolean;
+  from?: string | null;
+  to?: string;
+  commits?: Array<{
+    hash: string;
+    shortHash: string;
+    message: string;
+    author?: string;
+    date?: string;
+  }>;
+  changedFilesSummary?: any;
+  [key: string]: any;
+}
+
 export interface RepoResult {
   repo: string;
   path: string;
-  repoType: "code" | "system_knowledge";
+  repoType: "code" | "system_knowledge" | "inbox";
   status: "completed" | "skipped" | "failed";
   targetCommit?: string;
   durationMs: number;
