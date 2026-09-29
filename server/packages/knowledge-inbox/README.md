@@ -5,6 +5,8 @@
 | Action | 视图 | 用途 |
 |---|---|---|
 | `knowledge.collect` | `sk`、`skm` | 接收 `content`，生成候选编号、文件名和时间 |
+| `knowledge.query` | `sk`、`skm` | 按候选标识、关键词、贡献者、仓库或状态检索候选与归档 |
+| `knowledge.leaderboard` | `sk`、`skm` | 统计并查询候选知识贡献排行榜与总览数据 |
 | `knowledge.list` | `skm` | 按 `status`、`repo` 或 `year` 查看候选 |
 | `knowledge.archive` | `skm` | 用 `id` 与 `resolution` 记录决议并归档 |
 
@@ -15,6 +17,15 @@
 ```bash
 ad run knowledge/knowledge.collect --profile sk -- \
   content="# 支付超时排障候选" filename="payment-timeout"
+
+ad run knowledge/knowledge.query --profile sk -- \
+  keyword="timeout" status="all"
+
+ad run knowledge/knowledge.leaderboard --profile sk -- \
+  period="all" limit:=10
+
+ad run knowledge/knowledge.leaderboard --profile sk -- \
+  period="year" year="2026" repo="order-service"
 
 ad run knowledge/knowledge.list --profile skm -- status="pending"
 

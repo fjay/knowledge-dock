@@ -326,4 +326,64 @@ Fix RPC client connection pooling.`;
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("normalizes author in frontmatter to lowercase and persists to disk, and knowledge.list returns item.author", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-collect-author-"));
+    try {
+      const runtime = createTestRuntime();
+      runtime.config.set("KNOWLEDGE_INBOX_ROOT", tmpDir);
+
+      const content = `---
+title: Author Normalization Test
+author: ' Jay.Wu '
+---
+# Author Normalization Test
+Testing author field cleaning.`;
+
+      const result = await runtime.run(collectAction, {
+        content,
+        filename: "author-test",
+      });
+
+      assert.equal(result.status, "pending");
+
+      // Verify file on disk has normalized author
+      const diskContent = fs.readFileSync(result.path, "utf-8");
+      const parsed = parseFrontmatter(diskContent);
+      assert.equal(parsed.data.author, "jay.wu");
+
+      // Verify knowledge.list extracts author
+      const listResult = await runtime.run(listAction, { status: "pending" });
+      assert.equal(listResult.items.length, 1);
+      assert.equal(listResult.items[0].author, "jay.wu");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("omits author when author frontmatter is whitespace or invalid", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "kb-collect-author-empty-"));
+    try {
+      const runtime = createTestRuntime();
+      runtime.config.set("KNOWLEDGE_INBOX_ROOT", tmpDir);
+
+      const content = `---
+title: Empty Author Test
+author: '   '
+---
+# Empty Author Test
+Testing empty author cleaning.`;
+
+      const result = await runtime.run(collectAction, {
+        content,
+        filename: "empty-author-test",
+      });
+
+      const diskContent = fs.readFileSync(result.path, "utf-8");
+      const parsed = parseFrontmatter(diskContent);
+      assert.equal(parsed.data.author, undefined);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

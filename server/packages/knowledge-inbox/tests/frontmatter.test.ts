@@ -11,6 +11,7 @@ import {
   extractCandidateYear,
   parseRepoList,
   normalizeRepos,
+  normalizeAuthor,
 } from "../src/frontmatter.ts";
 
 describe("frontmatter utilities", () => {
@@ -185,5 +186,18 @@ Body content`;
     );
     // 5. No repos returns empty array
     assert.deepEqual(normalizeRepos(undefined, undefined), []);
+  });
+
+  it("normalizeAuthor cleans whitespace, converts to lowercase, and returns undefined for empty or invalid inputs", () => {
+    assert.equal(normalizeAuthor(" Jay.Wu "), "jay.wu");
+    assert.equal(normalizeAuthor("JAY.WU"), "jay.wu");
+    assert.equal(normalizeAuthor("  Alice  "), "alice");
+    assert.equal(normalizeAuthor(""), undefined);
+    assert.equal(normalizeAuthor("   "), undefined);
+    assert.equal(normalizeAuthor(null), undefined);
+    assert.equal(normalizeAuthor(undefined), undefined);
+    assert.equal(normalizeAuthor(123), undefined);
+    assert.equal(normalizeAuthor({}), undefined);
+    assert.equal(normalizeAuthor([]), undefined);
   });
 });

@@ -101,10 +101,14 @@ const views = {
       "workspace/files.read",
       "workspace/files.list",
       "knowledge/knowledge.collect",
+      "knowledge/knowledge.query",
+      "knowledge/knowledge.leaderboard",
       "search.rg",
       "files.read",
       "files.list",
-      "knowledge.collect"
+      "knowledge.collect",
+      "knowledge.query",
+      "knowledge.leaderboard"
     ]
   },
   skm: {

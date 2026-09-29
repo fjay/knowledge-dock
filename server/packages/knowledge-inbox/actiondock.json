@@ -235,6 +235,10 @@
                 "archiveNote": {
                   "type": "string",
                   "description": "Archival note or conclusion if provided"
+                },
+                "author": {
+                  "type": "string",
+                  "description": "Contributor username in normalized lowercase format"
                 }
               }
             }
@@ -452,6 +456,466 @@
             "resolution": "insufficient_evidence",
             "status": "archived",
             "year": "2026"
+          }
+        }
+      ]
+    },
+    "knowledge.query": {
+      "entry": "actions/knowledge-query.ts",
+      "description": "Query knowledge candidate documents across pending and processed archives with multi-criteria filtering by ID or filename, keyword in title/body/tags/archiveNote, contributor author, repository, status, and result count limit.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Candidate document identifier (e.g. '20260924-a1b2c3') or exact filename to match",
+            "examples": [
+              "20260924-a1b2c3",
+              "20260924-112345-a1b2c3-redis-split-brain.md"
+            ]
+          },
+          "keyword": {
+            "type": "string",
+            "description": "Fuzzy keyword matching in document title, markdown body, tags, and archive note",
+            "examples": [
+              "split brain",
+              "eviction",
+              "timeout"
+            ]
+          },
+          "author": {
+            "type": "string",
+            "description": "Filter by contributor username (case-insensitive exact match, e.g. 'jay.wu')",
+            "examples": [
+              "jay.wu"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Filter by associated repository identifier",
+            "examples": [
+              "order-service"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processed",
+              "all"
+            ],
+            "description": "Filter by processing status. Defaults to 'all'.",
+            "default": "all",
+            "examples": [
+              "all",
+              "pending",
+              "processed"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of candidate documents to return (default: 20, max: 100)",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100,
+            "examples": [
+              20,
+              50
+            ]
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "description": "List of matched knowledge documents ordered by creation time descending",
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "filename",
+                "path",
+                "status"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Unique candidate document identifier"
+                },
+                "filename": {
+                  "type": "string",
+                  "description": "Base filename of the document"
+                },
+                "path": {
+                  "type": "string",
+                  "description": "Absolute filesystem path to the document"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "pending",
+                    "processed"
+                  ],
+                  "description": "Document lifecycle status"
+                },
+                "resolution": {
+                  "type": "string",
+                  "enum": [
+                    "accepted",
+                    "duplicate",
+                    "rejected",
+                    "insufficient_evidence"
+                  ],
+                  "description": "Processing resolution if archived"
+                },
+                "archiveNote": {
+                  "type": "string",
+                  "description": "Archival note or conclusion if provided"
+                },
+                "author": {
+                  "type": "string",
+                  "description": "Contributor username in normalized lowercase format"
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Document title extracted from frontmatter or heading"
+                },
+                "domain": {
+                  "type": "string",
+                  "description": "Subject domain extracted from frontmatter"
+                },
+                "tags": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Tags extracted from frontmatter"
+                },
+                "repos": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Associated repository identifiers extracted from frontmatter"
+                },
+                "createdAt": {
+                  "type": "string",
+                  "description": "ISO 8601 creation timestamp"
+                },
+                "archivedAt": {
+                  "type": "string",
+                  "description": "ISO 8601 archive timestamp (if processed)"
+                },
+                "year": {
+                  "type": "string",
+                  "description": "Calendar year extracted from directory hierarchy, creation timestamp, or candidate ID prefix"
+                }
+              }
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "title": "Query candidate by exact ID across all statuses",
+          "input": {
+            "id": "20260924-a1b2c3"
+          },
+          "output": {
+            "items": [
+              {
+                "id": "20260924-a1b2c3",
+                "filename": "20260924-112345-a1b2c3-redis-split-brain.md",
+                "path": "/srv/knowledge-inbox/pending/20260924-112345-a1b2c3-redis-split-brain.md",
+                "status": "pending",
+                "author": "jay.wu",
+                "title": "Redis Cluster Split Brain Recovery",
+                "domain": "infrastructure",
+                "tags": [
+                  "redis",
+                  "cluster"
+                ],
+                "repos": [
+                  "order-service"
+                ],
+                "createdAt": "2026-09-24T11:23:45.000Z",
+                "year": "2026"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Query candidate by contributor author and status",
+          "input": {
+            "author": "jay.wu",
+            "status": "pending",
+            "limit": 10
+          },
+          "output": {
+            "items": [
+              {
+                "id": "20260924-a1b2c3",
+                "filename": "20260924-112345-a1b2c3-redis-split-brain.md",
+                "path": "/srv/knowledge-inbox/pending/20260924-112345-a1b2c3-redis-split-brain.md",
+                "status": "pending",
+                "author": "jay.wu",
+                "title": "Redis Cluster Split Brain Recovery",
+                "domain": "infrastructure",
+                "tags": [
+                  "redis"
+                ],
+                "createdAt": "2026-09-24T11:23:45.000Z",
+                "year": "2026"
+              }
+            ]
+          }
+        },
+        {
+          "title": "Query candidate by keyword matching title, body, or archiveNote",
+          "input": {
+            "keyword": "eviction",
+            "status": "processed"
+          },
+          "output": {
+            "items": [
+              {
+                "id": "20260924-d4e5f6",
+                "filename": "20260924-112500-d4e5f6-k8s-pod-eviction.md",
+                "path": "/srv/knowledge-inbox/processed/2026/accepted/20260924-112500-d4e5f6-k8s-pod-eviction.md",
+                "status": "processed",
+                "resolution": "accepted",
+                "archiveNote": "Merged into cluster guide",
+                "author": "jay.wu",
+                "title": "Kubernetes Pod Eviction Troubleshooting",
+                "domain": "infrastructure",
+                "tags": [
+                  "k8s"
+                ],
+                "repos": [
+                  "order-service"
+                ],
+                "createdAt": "2026-09-24T11:25:00.000Z",
+                "archivedAt": "2026-09-24T11:30:00.000Z",
+                "year": "2026"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "knowledge.leaderboard": {
+      "entry": "actions/knowledge-leaderboard.ts",
+      "description": "Aggregate and query knowledge contribution leaderboard statistics across pending and processed candidate documents, ranking contributors by accepted count, acceptance rate, and submission volume.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "enum": [
+              "all",
+              "year",
+              "month"
+            ],
+            "default": "all",
+            "description": "Time period scope for contribution statistics ('all', 'year', 'month', default: 'all')",
+            "examples": [
+              "all",
+              "year",
+              "month"
+            ]
+          },
+          "year": {
+            "type": "string",
+            "description": "Optional 4-digit calendar year filter (e.g. '2026')",
+            "examples": [
+              "2026"
+            ]
+          },
+          "repo": {
+            "type": "string",
+            "description": "Optional repository identifier to filter candidate contributions",
+            "examples": [
+              "order-service"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of contributors to return in leaderboard (default: 10, max: 100)",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100,
+            "examples": [
+              10,
+              20
+            ]
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "leaderboard",
+          "overview"
+        ],
+        "properties": {
+          "leaderboard": {
+            "type": "array",
+            "description": "Ranked list of top contributors matching the filter criteria",
+            "items": {
+              "type": "object",
+              "required": [
+                "rank",
+                "author",
+                "acceptedCount",
+                "totalCount",
+                "pendingCount",
+                "rejectedCount",
+                "acceptanceRate",
+                "topDomains"
+              ],
+              "properties": {
+                "rank": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Leaderboard rank starting from 1"
+                },
+                "author": {
+                  "type": "string",
+                  "description": "Normalized contributor author username"
+                },
+                "acceptedCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Number of accepted and merged candidate submissions"
+                },
+                "totalCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Total number of candidate submissions by this author in the scope"
+                },
+                "pendingCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Number of candidate submissions pending review"
+                },
+                "rejectedCount": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Number of rejected or non-accepted submissions"
+                },
+                "acceptanceRate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Acceptance rate rounded to 2 decimal places (acceptedCount / totalCount)"
+                },
+                "topDomains": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Up to 3 most frequent domain categories contributed by this author"
+                }
+              }
+            }
+          },
+          "overview": {
+            "type": "object",
+            "required": [
+              "totalContributors",
+              "totalSubmissions",
+              "totalAccepted",
+              "totalPending"
+            ],
+            "properties": {
+              "totalContributors": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total number of valid contributors within the filtered scope"
+              },
+              "totalSubmissions": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total candidate submissions within the filtered scope"
+              },
+              "totalAccepted": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total accepted submissions within the filtered scope"
+              },
+              "totalPending": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Total pending submissions within the filtered scope"
+              }
+            }
+          }
+        }
+      },
+      "examples": [
+        {
+          "title": "Query overall contribution leaderboard",
+          "input": {
+            "period": "all",
+            "limit": 10
+          },
+          "output": {
+            "leaderboard": [
+              {
+                "rank": 1,
+                "author": "jay.wu",
+                "acceptedCount": 8,
+                "totalCount": 10,
+                "pendingCount": 1,
+                "rejectedCount": 1,
+                "acceptanceRate": 0.8,
+                "topDomains": [
+                  "infrastructure",
+                  "database"
+                ]
+              }
+            ],
+            "overview": {
+              "totalContributors": 1,
+              "totalSubmissions": 10,
+              "totalAccepted": 8,
+              "totalPending": 1
+            }
+          }
+        },
+        {
+          "title": "Query monthly contribution leaderboard filtered by repository",
+          "input": {
+            "period": "month",
+            "repo": "order-service",
+            "limit": 5
+          },
+          "output": {
+            "leaderboard": [
+              {
+                "rank": 1,
+                "author": "alice",
+                "acceptedCount": 3,
+                "totalCount": 4,
+                "pendingCount": 1,
+                "rejectedCount": 0,
+                "acceptanceRate": 0.75,
+                "topDomains": [
+                  "payment"
+                ]
+              }
+            ],
+            "overview": {
+              "totalContributors": 1,
+              "totalSubmissions": 4,
+              "totalAccepted": 3,
+              "totalPending": 1
+            }
           }
         }
       ]

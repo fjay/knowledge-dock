@@ -72,6 +72,7 @@
 schema_version: 1
 title: 营销活动预算超限导致资格过滤故障分析
 domain: marketing
+author: jay.wu
 contribution_type: troubleshooting
 knowledge_type: runbook
 tags:
@@ -88,6 +89,7 @@ repos:
 - 模式版本：字段名为 `schema_version`，目前固定为数值 1；
 - 文档标题：字段名为 `title`，以简明专业的语言概括贡献的核心主题或故障表现；
 - 业务领域：字段名为 `domain`，表示所属的核心业务领域标识，如 `marketing`、`payment`、`order`、`user` 等；
+- 贡献者用户名：字段名为 `author`，内部用户名（全小写英文字符串，如 `jay.wu`），服务端在接收落盘时会自动执行去首尾空格并转换为全小写的归一化清洗；
 - 贡献类型：字段名为 `contribution_type`，枚举值包括：
   - `troubleshooting`：用于生产故障处置、日志分析与排障经验提炼；
   - `maintenance`：用于功能契约缺失提单、技术设计草案与数据库字段枚举勘误；

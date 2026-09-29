@@ -15,6 +15,7 @@
 schema_version: 1
 title: <简明描述故障现象与核心根因>
 domain: <业务领域标识，如 marketing / payment / order>
+author: jay.wu
 contribution_type: troubleshooting
 knowledge_type: runbook
 tags:
@@ -75,6 +76,7 @@ repos:
 schema_version: 1
 title: <简明描述维护主题或契约补充事项>
 domain: <业务领域标识，如 order / cert / settle>
+author: jay.wu
 contribution_type: maintenance
 knowledge_type: <flow | rule | interface | data | module>
 tags:
@@ -124,6 +126,7 @@ repos:
 schema_version: 1
 title: 支付退款状态机与死信重试契约补充
 domain: payment
+author: jay.wu
 contribution_type: maintenance
 knowledge_type: rule
 tags:
@@ -179,6 +182,7 @@ repos:
 schema_version: 1
 title: 实名认证绑卡端到端跨仓主时序草案
 domain: certification
+author: jay.wu
 contribution_type: maintenance
 knowledge_type: flow
 tags:
@@ -234,6 +238,7 @@ repos:
 schema_version: 1
 title: 订单主表结算状态字段注释与代码枚举勘误
 domain: order
+author: jay.wu
 contribution_type: maintenance
 knowledge_type: data
 tags:
@@ -292,6 +297,7 @@ repos:
 schema_version: 1
 title: 营销活动预算超限导致资格过滤故障分析
 domain: marketing
+author: jay.wu
 contribution_type: troubleshooting
 knowledge_type: runbook
 tags:

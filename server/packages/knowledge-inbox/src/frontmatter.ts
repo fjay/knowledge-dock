@@ -228,3 +228,16 @@ export const VALID_RESOLUTIONS = new Set([
   "insufficient_evidence",
 ]);
 
+/**
+ * Normalize author username into clean, lowercase string.
+ * Strips leading/trailing whitespace and converts to lowercase.
+ * Returns undefined for empty string or non-string inputs.
+ */
+export function normalizeAuthor(author: unknown): string | undefined {
+  if (typeof author !== "string") {
+    return undefined;
+  }
+  const trimmed = author.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+

@@ -11,6 +11,7 @@ import {
   buildCandidateFilename,
   serializeMarkdownWithFrontmatter,
   normalizeRepos,
+  normalizeAuthor,
 } from "../src/frontmatter.ts";
 import { getInboxRoot, ensureDirectory } from "../src/storage.ts";
 
@@ -62,6 +63,14 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     frontmatterData.repos = repos;
   }
   delete frontmatterData.repo;
+
+  // Normalize author if provided
+  const author = normalizeAuthor(frontmatterData.author);
+  if (author) {
+    frontmatterData.author = author;
+  } else {
+    delete frontmatterData.author;
+  }
 
   // Append/override server-managed metadata
   frontmatterData.id = id;
