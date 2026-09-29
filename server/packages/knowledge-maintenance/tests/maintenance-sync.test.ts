@@ -1177,5 +1177,65 @@ describe("maintenance.sync", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("synchronizes single-branch repository dynamically resolving origin/HEAD default branch when sourceBranch is omitted", async () => {
+    const tmpDir = path.join(os.tmpdir(), `test-sync-default-branch-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
+    fs.mkdirSync(tmpDir, { recursive: true });
+
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      const executedCommands: string[] = [];
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        executedCommands.push(cmd);
+
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "status --porcelain") {
+          handle.emitOutput("stdout", "");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "branch -a --format=%(refname:short)") {
+          handle.emitOutput("stdout", "master\norigin/master\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "fetch --filter=blob:none origin" || cmd === "fetch origin") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "symbolic-ref --short refs/remotes/origin/HEAD") {
+          handle.emitOutput("stdout", "origin/master\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --verify refs/heads/master") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "checkout master") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "merge --ff-only origin/master") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse HEAD") {
+          handle.emitOutput("stdout", "5555666677778888999900001111222233334444\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(syncAction, {
+        path: tmpDir,
+        repoType: "system_knowledge",
+      });
+
+      assert.equal(res.status, "success");
+      assert.equal(res.sourceBranch, "master");
+      assert.equal(res.currentCommit, "5555666677778888999900001111222233334444");
+      assert.ok(executedCommands.includes("symbolic-ref --short refs/remotes/origin/HEAD"));
+      assert.ok(executedCommands.includes("merge --ff-only origin/master"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });
 

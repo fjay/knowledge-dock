@@ -16,13 +16,11 @@
   {
     "path": "/srv/workspace/system-knowledge",
     "url": "git@github.com:example/system-knowledge.git",
-    "repoType": "system_knowledge",
-    "sourceBranch": "master"
+    "repoType": "system_knowledge"
   },
   {
     "path": "/srv/knowledge-inbox",
     "url": "git@github.com:example/knowledge-inbox.git",
-    "repoType": "inbox",
-    "sourceBranch": "main"
+    "repoType": "inbox"
   }
 ]

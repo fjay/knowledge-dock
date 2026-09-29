@@ -91,7 +91,14 @@ async function scanSingleRepo(
 
     let targetBranch = repoInput.branch ?? repoInput.sourceBranch;
     if (!targetBranch) {
-      targetBranch = repoType === "code" ? "release" : (repoType === "inbox" ? "main" : "master");
+      if (
+        repoType === "code" &&
+        ((await git.refExists("refs/heads/release")) || (await git.refExists("origin/release")))
+      ) {
+        targetBranch = "release";
+      } else {
+        targetBranch = await git.getDefaultBranch();
+      }
     }
     const branches = await git.listBranchNames();
 

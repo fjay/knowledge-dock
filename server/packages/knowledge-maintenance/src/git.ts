@@ -202,6 +202,31 @@ export class GitClient {
     return res.code === 0;
   }
 
+  /**
+   * Resolves repository default branch dynamically from remote origin/HEAD or local branches.
+   */
+  async getDefaultBranch(): Promise<string> {
+    const headRes = await this.run(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]);
+    if (headRes.code === 0 && headRes.stdout.trim()) {
+      const branch = headRes.stdout.trim().replace(/^origin\//, "").trim();
+      if (branch) return branch;
+    }
+
+    const currentRes = await this.run(["branch", "--show-current"]);
+    if (currentRes.code === 0 && currentRes.stdout.trim()) {
+      return currentRes.stdout.trim();
+    }
+
+    if ((await this.refExists("refs/heads/main")) || (await this.refExists("origin/main"))) {
+      return "main";
+    }
+    if ((await this.refExists("refs/heads/master")) || (await this.refExists("origin/master"))) {
+      return "master";
+    }
+
+    return "main";
+  }
+
   async fetchOrigin(options?: { filterBlobNone?: boolean }): Promise<GitExecResult> {
     const useBlobless = options?.filterBlobNone ?? true;
     if (useBlobless) {

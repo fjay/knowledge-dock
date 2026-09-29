@@ -141,21 +141,17 @@ async function syncSingleRepo(
 
   // 3. Resolve repository type and branch configurations
   const repoType = repoInput.repoType ?? (await detectRepoType(git, repoInput.knowledgeBranch));
-  let defaultSourceBranch: string;
-  if (repoType === "code") {
-    defaultSourceBranch = "release";
-  } else if (repoType === "inbox") {
-    if ((await git.refExists("refs/heads/main")) || (await git.refExists("origin/main"))) {
-      defaultSourceBranch = "main";
-    } else if ((await git.refExists("refs/heads/master")) || (await git.refExists("origin/master"))) {
-      defaultSourceBranch = "master";
+  let sourceBranch = repoInput.sourceBranch;
+  if (!sourceBranch) {
+    if (
+      repoType === "code" &&
+      ((await git.refExists("refs/heads/release")) || (await git.refExists("origin/release")))
+    ) {
+      sourceBranch = "release";
     } else {
-      defaultSourceBranch = "main";
+      sourceBranch = await git.getDefaultBranch();
     }
-  } else {
-    defaultSourceBranch = "master";
   }
-  const sourceBranch = repoInput.sourceBranch ?? defaultSourceBranch;
   const knowledgeBranch = repoType === "code" ? (repoInput.knowledgeBranch ?? "docs") : undefined;
 
   ctx.log.info(`Syncing repository (${repoType})`, {
