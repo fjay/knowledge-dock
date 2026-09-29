@@ -336,7 +336,7 @@ test("Pipeline Runner - 系统知识库全局维护提示词生成 (buildSystemK
   });
 
   await t.test("验证包含多子代理协同架构与主智能体统筹定位", () => {
-    assert.ok(prompt.includes("主智能体角色定位：作为系统层知识维护总控中枢，主智能体负责统筹决策、方案讨论、子代理调度委派与最终门禁验收，绝不亲自盲目编辑文件"));
+    assert.ok(prompt.includes("主智能体角色定位：作为系统层知识维护总控中枢，主智能体负责统筹决策、自主规划、子代理调度委派与最终门禁验收，绝不亲自盲目编辑文件"));
     assert.ok(prompt.includes("跨仓契约与领域影响分析子代理"));
     assert.ok(prompt.includes("新领域初始化子代理"));
     assert.ok(prompt.includes("跨仓主流程子代理"));
@@ -349,18 +349,19 @@ test("Pipeline Runner - 系统知识库全局维护提示词生成 (buildSystemK
     assert.ok(prompt.includes("Controller、路由定义、RPC 契约与对外暴露服务"));
     assert.ok(prompt.includes("MQ 主题生产者与消费者、消息载荷与队列绑定"));
     assert.ok(prompt.includes("Flyway 迁移脚本、DDL 变更与持久化实体模型"));
-    assert.ok(prompt.includes("路径一（无需更新）"));
+    assert.ok(prompt.includes("路径一（开辟新领域）"));
     assert.ok(prompt.includes("路径二（更新已有领域）"));
-    assert.ok(prompt.includes("路径三（开辟新领域）"));
+    assert.ok(prompt.includes("路径三（无需更新 - 高门槛严格兜底）"));
   });
 
-  await t.test("验证包含人机方案讨论门禁与先议后行铁律", () => {
-    assert.ok(prompt.includes("人机方案讨论门禁（先议后行铁律）"));
-    assert.ok(prompt.includes("《业务域演进方案草案》"));
-    assert.ok(prompt.includes("汇报判定依据：列举兄弟仓对外接口、MQ 事件、DDL 变更等具体客观证据"));
-    assert.ok(prompt.includes("汇报受影响清单：拟新建或更新的领域目录、文档列表及对应专业子代理委派计划"));
-    assert.ok(prompt.includes("待确认事项：关键业务术语、跨仓流程主导权归属或数据库映射疑问"));
-    assert.ok(prompt.includes("终端人机讨论：等待用户明确确认或调整输入"));
+  await t.test("验证包含全自动自闭环执行铁律与全景主动探索前置门禁", () => {
+    assert.ok(prompt.includes("全自动自闭环执行铁律（严禁中断流水线）"));
+    assert.ok(prompt.includes("严禁在终端向用户提问、索求确认或等待输入"));
+    assert.ok(prompt.includes("全景资产反查与主动探索门禁（防偷懒铁律）"));
+    assert.ok(prompt.includes("严禁仅凭增量提交未触碰业务源码（例如仅升级依赖或修改构建配置）便草率判定为无需更新"));
+    assert.ok(prompt.includes("自主方案规划（直接闭环，不挂起终端）"));
+    assert.ok(!prompt.includes("终端人机讨论：等待用户明确确认或调整输入"));
+    assert.ok(!prompt.includes("待确认事项"));
   });
 
   await t.test("验证包含专业分工受控写入与零断链验收推进闭环", () => {
