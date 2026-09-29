@@ -96,20 +96,23 @@ const views = {
   sk: {
     token: process.env.ACTIONDOCK_TOKEN,
     packageAllowlist: ["workspace", "knowledge"],
-    actionAllowlist: [
-      "workspace/search.rg",
-      "workspace/files.read",
-      "workspace/files.list",
-      "knowledge/knowledge.collect",
-      "knowledge/knowledge.query",
-      "knowledge/knowledge.leaderboard",
-      "search.rg",
-      "files.read",
-      "files.list",
-      "knowledge.collect",
-      "knowledge.query",
-      "knowledge.leaderboard"
-    ]
+    actionAllowlist: (process.env.SK_ACTION_ALLOWLIST
+      ? process.env.SK_ACTION_ALLOWLIST.split(",").map(s => s.trim()).filter(Boolean)
+      : [
+          "workspace/search.rg",
+          "workspace/files.read",
+          "workspace/files.list",
+          "knowledge/knowledge.collect",
+          "knowledge/knowledge.query",
+          "knowledge/knowledge.leaderboard",
+          "search.rg",
+          "files.read",
+          "files.list",
+          "knowledge.collect",
+          "knowledge.query",
+          "knowledge.leaderboard"
+        ]
+    )
   },
   skm: {
     token: process.env.ACTIONDOCK_AGENT_TOKEN,

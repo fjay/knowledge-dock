@@ -42,12 +42,13 @@ RUN ad link /app/server/packages/knowledge-workspace && \
 # 创建标准挂载目录与日志目录
 RUN mkdir -p /srv/workspace /srv/knowledge-inbox /etc/actiondock /var/log/actiondock
 
-# 默认运行环境变量
+# 默认运行环境变量（包含只读查询视图 sk 允许调用的 Action 清单）
 ENV NODE_ENV=production \
     PORT=443 \
     WORKSPACE_ROOT=/srv/workspace \
     KNOWLEDGE_INBOX_ROOT=/srv/knowledge-inbox \
-    GIT_BLOBLESS_FETCH=true
+    GIT_BLOBLESS_FETCH=true \
+    SK_ACTION_ALLOWLIST="workspace/search.rg,workspace/files.read,workspace/files.list,knowledge/knowledge.collect,knowledge/knowledge.query,knowledge/knowledge.leaderboard,search.rg,files.read,files.list,knowledge.collect,knowledge.query,knowledge.leaderboard"
 
 # 暴露原生 HTTPS 端口 (443 单端口多视图服务)
 EXPOSE 443
