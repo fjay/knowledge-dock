@@ -6,6 +6,8 @@ export interface PipelineOptions {
   dryRun?: boolean;
   only?: string | null;
   skipSystemKnowledge?: boolean;
+  forceSystemKnowledge?: boolean;
+  syncSystemKnowledge?: boolean;
   skipInbox?: boolean;
   reportFile?: string | null;
   logFile?: string | null;

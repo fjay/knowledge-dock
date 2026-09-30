@@ -1084,6 +1084,276 @@ test("Pipeline Runner - 两阶段调度（单仓巡检与系统知识库全局�
     assert.ok(sysRes?.message?.includes("跳过系统层维护"));
   });
 
+  await t.test("前序代码仓均无变更但系统知识仓有更新时，仅执行轻量同步与检查点推进，不派发外部智能体", async () => {
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "upToDate",
+          hasChanges: false,
+          from: "222",
+          to: "222",
+        },
+        {
+          repo: "system-knowledge",
+          path: "/srv/workspace/system-knowledge",
+          repoType: "system_knowledge",
+          status: "changed",
+          hasChanges: true,
+          from: "888",
+          to: "999",
+        },
+      ],
+    };
+
+    const executedCommands: string[] = [];
+    const dispatchedCmds: string[] = [];
+
+    const execFn = async (cmd: string) => {
+      executedCommands.push(cmd);
+      if (cmd.includes("maintenance.list")) {
+        return { stdout: JSON.stringify({ ok: true, data: mockScanData }), stderr: "" };
+      }
+      if (cmd.includes("maintenance.sync")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              status: "success",
+              path: "/srv/workspace/system-knowledge",
+              repoType: "system_knowledge",
+              sourceBranch: "master",
+              currentCommit: "999",
+              message: "Successfully synchronized system knowledge branch 'master'",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("maintenance.complete")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              repo: "system-knowledge",
+              path: "/srv/workspace/system-knowledge",
+              currentCommit: "999",
+              actionTaken: "synced",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("knowledge.list")) {
+        return { stdout: JSON.stringify({ ok: true, data: { items: [] } }), stderr: "" };
+      }
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    };
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --repo {{repo}}",
+      },
+      {
+        execFn,
+        dispatchFn: async (cmd: string) => {
+          dispatchedCmds.push(cmd);
+        },
+      }
+    )) as PipelineSummary;
+
+    assert.equal(result.total, 2);
+    assert.equal(result.skipped, 1);
+    assert.equal(result.completed, 1);
+    assert.equal(result.failed, 0);
+    // 验证纯同步模式下绝不触发外部智能体派发
+    assert.equal(dispatchedCmds.length, 0);
+
+    // 验证确实调用了服务端的 maintenance.sync 与 maintenance.complete
+    assert.ok(executedCommands.some((c) => c.includes("maintenance.sync")));
+    assert.ok(executedCommands.some((c) => c.includes("maintenance.complete")));
+
+    const sysRes = result.results.find((r) => r.repo === "system-knowledge");
+    assert.equal(sysRes?.status, "completed");
+    assert.equal(sysRes?.targetCommit, "999");
+    assert.ok(sysRes?.message?.includes("前序代码仓无更新，已完成系统知识库自身变动同步并推进检查点至 999"));
+  });
+
+  await t.test("前序代码仓无变更但开启 forceSystemKnowledge 时，强制派发智能体进行全量维护", async () => {
+    let mockTime = 1000;
+    const nowFn = () => mockTime;
+    const sleepFn = async () => {
+      mockTime += 1000;
+    };
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "upToDate",
+          hasChanges: false,
+          from: "222",
+          to: "222",
+        },
+        {
+          repo: "system-knowledge",
+          path: "/srv/workspace/system-knowledge",
+          repoType: "system_knowledge",
+          status: "changed",
+          hasChanges: true,
+          from: "888",
+          to: "999",
+        },
+      ],
+    };
+
+    const dispatchedCmds: string[] = [];
+    const execFn = async (cmd: string) => {
+      if (cmd.includes("maintenance.list") && !cmd.includes("-- path=")) {
+        return { stdout: JSON.stringify({ ok: true, data: mockScanData }), stderr: "" };
+      }
+      if (cmd.includes("system-knowledge")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              status: "upToDate",
+              repo: "system-knowledge",
+              path: "/srv/workspace/system-knowledge",
+              from: "999",
+              to: "999",
+              hasChanges: false,
+              checkpointUpdatedAt: new Date(mockTime + 5000).toISOString(),
+            },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("knowledge.list")) {
+        return { stdout: JSON.stringify({ ok: true, data: { items: [] } }), stderr: "" };
+      }
+      return { stdout: JSON.stringify({ ok: true, data: {} }), stderr: "" };
+    };
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --repo {{repo}}",
+        forceSystemKnowledge: true,
+      },
+      {
+        execFn,
+        sleepFn,
+        nowFn,
+        dispatchFn: async (cmd: string) => {
+          dispatchedCmds.push(cmd);
+        },
+      }
+    )) as PipelineSummary;
+
+    assert.equal(result.total, 2);
+    assert.equal(result.skipped, 1);
+    assert.equal(result.completed, 1);
+    // 验证开启 forceSystemKnowledge 时即使前序无更新也会派发智能体
+    assert.equal(dispatchedCmds.length, 1);
+    assert.ok(dispatchedCmds[0]!.includes("system-knowledge"));
+  });
+
+  await t.test("前序代码仓无更新且扫描基线对齐时，开启 syncSystemKnowledge 主动探测并拉取远端新提交完成同步", async () => {
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          repoType: "code",
+          status: "upToDate",
+          hasChanges: false,
+          from: "222",
+          to: "222",
+        },
+        {
+          repo: "system-knowledge",
+          path: "/srv/workspace/system-knowledge",
+          repoType: "system_knowledge",
+          status: "upToDate",
+          hasChanges: false,
+          from: "888",
+          to: "888",
+        },
+      ],
+    };
+
+    const dispatchedCmds: string[] = [];
+    const execFn = async (cmd: string) => {
+      if (cmd.includes("maintenance.list")) {
+        return { stdout: JSON.stringify({ ok: true, data: mockScanData }), stderr: "" };
+      }
+      if (cmd.includes("maintenance.sync")) {
+        // 模拟远端拉取到了新提交 999
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              status: "success",
+              path: "/srv/workspace/system-knowledge",
+              repoType: "system_knowledge",
+              sourceBranch: "master",
+              currentCommit: "999",
+              message: "Successfully synchronized system knowledge branch 'master'",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("maintenance.complete")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              repo: "system-knowledge",
+              path: "/srv/workspace/system-knowledge",
+              currentCommit: "999",
+              actionTaken: "synced",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    };
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --repo {{repo}}",
+        syncSystemKnowledge: true,
+      },
+      {
+        execFn,
+        dispatchFn: async (cmd: string) => {
+          dispatchedCmds.push(cmd);
+        },
+      }
+    )) as PipelineSummary;
+
+    assert.equal(result.total, 2);
+    assert.equal(result.skipped, 1);
+    assert.equal(result.completed, 1);
+    assert.equal(dispatchedCmds.length, 0);
+
+    const sysRes = result.results.find((r) => r.repo === "system-knowledge");
+    assert.equal(sysRes?.status, "completed");
+    assert.equal(sysRes?.targetCommit, "999");
+  });
+
   await t.test("开启 --skip-system-knowledge 时跳过系统知识库调度", async () => {
     const mockScanData = {
       batch: true,

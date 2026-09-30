@@ -55,6 +55,18 @@
     ```bash
     ad run orchestrator.pipeline -- profile="skm" skipSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
     ```
+- 强制全量维护系统知识库：
+  - 使用 `forceSystemKnowledge` 参数在代码仓无变更时强制唤醒智能体执行系统知识库跨仓反查与主流程编排。
+  - 调用示例：
+    ```bash
+    ad run orchestrator.pipeline -- profile="skm" forceSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
+    ```
+- 主动探测并同步系统知识库远端提交：
+  - 使用 `syncSystemKnowledge` 参数在前序无更新时主动拉取远端源分支以探测外部新提交并对齐检查点。
+  - 调用示例：
+    ```bash
+    ad run orchestrator.pipeline -- profile="skm" syncSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
+    ```
 - 跳过待审池消费：
   - 使用 `skipInbox` 参数跳过待审池候选文档消费阶段。
   - 调用示例：

@@ -19,6 +19,8 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   const interval = input.interval ?? 10;
   const only = input.only ?? null;
   const skipSystemKnowledge = input.skipSystemKnowledge ?? false;
+  const forceSystemKnowledge = input.forceSystemKnowledge ?? false;
+  const syncSystemKnowledge = input.syncSystemKnowledge ?? false;
   const skipInbox = input.skipInbox ?? false;
   const reportFile = input.reportFile ?? "maintenance-report.md";
   const logFile = input.logFile ?? null;
@@ -30,6 +32,8 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     timeout,
     interval,
     skipSystemKnowledge,
+    forceSystemKnowledge,
+    syncSystemKnowledge,
     skipInbox,
     logFile,
   });
@@ -141,6 +145,8 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       dryRun,
       only,
       skipSystemKnowledge,
+      forceSystemKnowledge,
+      syncSystemKnowledge,
       skipInbox,
       reportFile,
       logFile,

@@ -72,6 +72,24 @@
               true
             ]
           },
+          "forceSystemKnowledge": {
+            "type": "boolean",
+            "description": "Force full AI agent dispatch for system knowledge base maintenance even when preceding code repos had no updates (default: false)",
+            "default": false,
+            "examples": [
+              false,
+              true
+            ]
+          },
+          "syncSystemKnowledge": {
+            "type": "boolean",
+            "description": "Probe and pull remote updates for system knowledge base when preceding code repos had no updates (default: false)",
+            "default": false,
+            "examples": [
+              false,
+              true
+            ]
+          },
           "skipInbox": {
             "type": "boolean",
             "description": "Skip third-phase knowledge inbox pending candidate inspection and review (default: false)",

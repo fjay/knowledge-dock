@@ -57,3 +57,42 @@ export async function queryRemoteInboxList(
   const data = parsed.data ?? parsed;
   return Array.isArray(data.items) ? data.items : [];
 }
+
+/**
+ * 调用远端 maintenance.sync 同步单仓分支
+ */
+export async function syncRemoteRepo(
+  profile: string = "skm",
+  repoPath: string,
+  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
+): Promise<any> {
+  const safeProfile = validateProfile(profile);
+  const cmd = `ad run maintenance.sync --profile ${safeProfile} --json -- path="${escapeQuotes(repoPath)}"`;
+  const { stdout } = await execFn(cmd);
+  const parsed = JSON.parse(stdout);
+  if (parsed.ok === false && parsed.error) {
+    throw new Error(parsed.error.message || `ActionDock 错误: ${parsed.error.code}`);
+  }
+  return parsed.data ?? parsed;
+}
+
+/**
+ * 调用远端 maintenance.complete 推进单仓检查点水位
+ */
+export async function completeRemoteRepo(
+  profile: string = "skm",
+  repoPath: string,
+  commit: string,
+  actionTaken: string = "synced",
+  summary: string = "同步系统知识库自身变更",
+  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
+): Promise<any> {
+  const safeProfile = validateProfile(profile);
+  const cmd = `ad run maintenance.complete --profile ${safeProfile} --json -- path="${escapeQuotes(repoPath)}" commit="${escapeQuotes(commit)}" actionTaken="${escapeQuotes(actionTaken)}" summary="${escapeQuotes(summary)}"`;
+  const { stdout } = await execFn(cmd);
+  const parsed = JSON.parse(stdout);
+  if (parsed.ok === false && parsed.error) {
+    throw new Error(parsed.error.message || `ActionDock 错误: ${parsed.error.code}`);
+  }
+  return parsed.data ?? parsed;
+}

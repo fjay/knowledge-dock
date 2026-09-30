@@ -171,7 +171,7 @@ export async function runPipeline(
     for (const item of systemRepos) {
       if (item.status === "error") {
         failedCount++;
-      } else if (!item.hasChanges && item.status !== "initial" && item.status !== "changed" && pendingCodeRepos.length === 0 && !options.only) {
+      } else if (!item.hasChanges && item.status !== "initial" && item.status !== "changed" && pendingCodeRepos.length === 0 && !options.only && !options.forceSystemKnowledge) {
         skippedCount++;
       } else {
         const placeholders = buildPlaceholders(item, { codePhaseSummary: codePhaseSummaryForDryRun });
