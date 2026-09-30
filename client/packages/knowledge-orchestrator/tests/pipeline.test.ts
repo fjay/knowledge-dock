@@ -333,6 +333,20 @@ describe("orchestrator.pipeline", () => {
     assert.ok(!skmConfig.includes("orchestrator"), "skm 视图绝不包含 orchestrator");
   });
 
+  it("服务端构建参数校验：Dockerfile 与 docker-compose.yml 声明支持 APT_MIRROR 自定义镜像源", () => {
+    const dockerfilePath = path.resolve(__dirname, "../../../../server/Dockerfile");
+    const composePath = path.resolve(__dirname, "../../../../docker-compose.yml");
+    assert.ok(fs.existsSync(dockerfilePath), "server/Dockerfile 必须存在");
+    assert.ok(fs.existsSync(composePath), "docker-compose.yml 必须存在");
+
+    const dockerfileContent = fs.readFileSync(dockerfilePath, "utf8");
+    const composeContent = fs.readFileSync(composePath, "utf8");
+
+    assert.match(dockerfileContent, /ARG\s+APT_MIRROR=deb\.debian\.org/);
+    assert.ok(dockerfileContent.includes("${APT_MIRROR}"), "Dockerfile 中必须引用 APT_MIRROR 参数");
+    assert.match(composeContent, /APT_MIRROR:\s*\$\{APT_MIRROR:-deb\.debian\.org\}/);
+  });
+
   it("三阶段执行与待审池消费闭环：单代码仓、系统知识仓与待审池候选均成功闭环", async () => {
     const fakeDriver = new FakeProcessDriver();
     const dispatchedCommands: string[] = [];

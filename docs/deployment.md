@@ -25,7 +25,10 @@
   SSH_DIR=/root/.ssh
   GIT_AUTHOR_NAME="Knowledge Maintainer"
   GIT_AUTHOR_EMAIL="maintainer@example.com"
+  APT_MIRROR=deb.debian.org
   ```
+
+若处于内网或隔离网络环境，构建镜像时可通过 `APT_MIRROR` 指定内部 Debian 镜像源（如 `mirrors.tuna.tsinghua.edu.cn`），构建参数会自动替换软件源地址；对于离线封闭环境，建议直接基于已完成换源的基础镜像构建。
 
 `ACTIONDOCK_TOKEN` 允许检索和向待审池追加候选；`ACTIONDOCK_AGENT_TOKEN` 允许编辑、终端执行和仓库维护。不要将维护令牌交给外部查询用户。
 
@@ -100,6 +103,7 @@ ad run workspace/files.list --profile sk -- path="." depth:=1
 | 现象 | 首先核对 |
 |---|---|
 | 容器启动即退出 | 两枚令牌是否缺失、过短、相同或仍为模板占位符；查看 `docker compose logs knowledge-server` |
+| 镜像构建时 APT 报错或连接超时 | 核对 `.env` 中的 `APT_MIRROR` 是否正确指向可用镜像源；或预先制作内网基础镜像 |
 | 客户端证书报错 | 证书是否受信任、服务地址是否匹配；自签名环境可暂用 `-k` |
 | 仓库克隆失败 | 清单 `url`、密钥权限、仓库授权和 SSH 主机指纹 |
 | `maintenance.list` 没有仓库 | `server/config/repos.json` 是否存在、路径是否正确、仓库是否已经同步 |

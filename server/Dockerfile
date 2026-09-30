@@ -6,8 +6,12 @@ FROM node:25-bookworm-slim
 LABEL maintainer="ActionDock Knowledge Team"
 LABEL description="ActionDock Knowledge Server (Read, Append, Privileged Maintenance Planes)"
 
+# 构建参数：支持自定义 APT 镜像源（内网/隔离环境可传入内部镜像地址，例如 mirrors.tuna.tsinghua.edu.cn）
+ARG APT_MIRROR=deb.debian.org
+
 # 安装必要的系统底层工具：git (带 partial clone 支持), ripgrep (search.rg 引擎), ssh, ca-certificates
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
     git \
     ripgrep \
     openssh-client \
