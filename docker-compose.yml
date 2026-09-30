@@ -9,6 +9,7 @@ services:
     ports:
       - "${PORT:-443}:443"
     environment:
+      - TZ=${TZ:-Asia/Shanghai}
       - PORT=443
       - ACTIONDOCK_TOKEN=${ACTIONDOCK_TOKEN:?ACTIONDOCK_TOKEN is required (generate using openssl rand -hex 32)}
       - ACTIONDOCK_AGENT_TOKEN=${ACTIONDOCK_AGENT_TOKEN:?ACTIONDOCK_AGENT_TOKEN is required (generate using openssl rand -hex 32)}

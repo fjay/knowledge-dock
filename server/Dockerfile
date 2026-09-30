@@ -44,6 +44,7 @@ RUN mkdir -p /srv/workspace /srv/knowledge-inbox /etc/actiondock /var/log/action
 
 # 默认运行环境变量（包含只读查询视图 sk 允许调用的 Action 清单）
 ENV NODE_ENV=production \
+    TZ=Asia/Shanghai \
     PORT=443 \
     WORKSPACE_ROOT=/srv/workspace \
     KNOWLEDGE_INBOX_ROOT=/srv/knowledge-inbox \
