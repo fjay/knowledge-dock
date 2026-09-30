@@ -226,17 +226,13 @@ test("Pipeline Runner - 内置单仓维护提示词生成 (buildPrompt)", async 
     assert.ok(prompt.includes("no_change_needed"));
   });
 
-  await t.test("验证包含特权环境与工具自省速查", () => {
+  await t.test("验证包含特权环境与工具自省契约", () => {
     assert.ok(prompt.includes("--profile skm"));
     assert.ok(prompt.includes("ad info"));
     assert.ok(prompt.includes("ad list"));
     assert.ok(prompt.includes("ad describe"));
-    assert.ok(prompt.includes("workspace/search.rg"));
-    assert.ok(prompt.includes("workspace/files.read"));
-    assert.ok(prompt.includes("workspace/files.edit"));
-    assert.ok(prompt.includes("workspace/files.write"));
-    assert.ok(prompt.includes("workspace/files.list"));
-    assert.ok(prompt.includes("workspace/bash.exec"));
+    assert.ok(prompt.includes("Recommended Input"));
+    assert.ok(prompt.includes("Syntax Reference"));
   });
 
   await t.test("验证包含断链自检与就地修复门禁铁律", () => {
