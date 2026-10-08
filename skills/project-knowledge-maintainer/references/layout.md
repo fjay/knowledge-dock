@@ -40,7 +40,7 @@ docs/knowledge/
 | `runbook/runbook-troubleshooting.md` | `runbooks/troubleshooting.md`、`runbook/error-triage.md`（无前缀） |
 | `overview.md`（根目录唯一文件） | `overview/system-overview.md`、`overview/overview-system.md` |
 | `module/module-handler-chain.md` | `channel/common-module.md`、`modules/service-layer.md` |
-| `data/data-ddl-app_db.md` | `database-schema.md`、`tables.md`、`data-prod-ddl.md`、`custom-ddl.md`、`data-db-ddl-app_db.md` |
+| `ddl/data-ddl-app_db.md` | `data/data-ddl-app_db.md`、`database-schema.md`、`tables.md`、`data-prod-ddl.md`、`custom-ddl.md`、`data-db-ddl-app_db.md` |
 
 ## DDL 与多生产库
 
