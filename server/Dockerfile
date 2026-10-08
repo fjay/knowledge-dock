@@ -53,7 +53,7 @@ ENV NODE_ENV=production \
     WORKSPACE_ROOT=/srv/workspace \
     KNOWLEDGE_INBOX_ROOT=/srv/knowledge-inbox \
     GIT_BLOBLESS_FETCH=true \
-    SK_ACTION_ALLOWLIST="workspace/search.rg,workspace/files.read,workspace/files.list,knowledge/knowledge.collect,knowledge/knowledge.query,knowledge/knowledge.leaderboard,search.rg,files.read,files.list,knowledge.collect,knowledge.query,knowledge.leaderboard"
+    SK_ACTION_ALLOWLIST="workspace/search.rg,workspace/files.read,workspace/files.list,knowledge/knowledge.collect,knowledge/knowledge.get,knowledge/knowledge.query,knowledge/knowledge.leaderboard,search.rg,files.read,files.list,knowledge.collect,knowledge.get,knowledge.query,knowledge.leaderboard"
 
 # 暴露原生 HTTPS 端口 (443 单端口多视图服务)
 EXPOSE 443

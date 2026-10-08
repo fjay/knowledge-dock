@@ -104,12 +104,14 @@ const views = {
           "workspace/files.read",
           "workspace/files.list",
           "knowledge/knowledge.collect",
+          "knowledge/knowledge.get",
           "knowledge/knowledge.query",
           "knowledge/knowledge.leaderboard",
           "search.rg",
           "files.read",
           "files.list",
           "knowledge.collect",
+          "knowledge.get",
           "knowledge.query",
           "knowledge.leaderboard"
         ]

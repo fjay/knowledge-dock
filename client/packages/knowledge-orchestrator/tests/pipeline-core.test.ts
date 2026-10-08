@@ -1568,6 +1568,7 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
     assert.ok(prompt.includes("redis, cluster, failover"));
 
     // 审查流程与四路决议
+    assert.ok(prompt.includes("knowledge.get"));
     assert.ok(prompt.includes("files.read"));
     assert.ok(prompt.includes("accepted"));
     assert.ok(prompt.includes("duplicate"));

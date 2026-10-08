@@ -919,6 +919,155 @@
           }
         }
       ]
+    },
+    "knowledge.get": {
+      "entry": "actions/knowledge-get.ts",
+      "description": "Get full details and complete Markdown content of a knowledge candidate document by identifier (ID, filename, or relative/absolute path) across pending and processed archives.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Candidate document identifier (format: YYYYMMDD-hash), filename, or relative/absolute path within the inbox",
+            "examples": [
+              "20260924-a1b2c3",
+              "20260924-112345-a1b2c3-redis-split-brain.md"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Optional direct filesystem path (relative or absolute within inbox) to the candidate document",
+            "examples": [
+              "pending/20260924-112345-a1b2c3-redis-split-brain.md",
+              "/srv/knowledge-inbox/pending/20260924-112345-a1b2c3-redis-split-brain.md"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processed",
+              "all"
+            ],
+            "description": "Optional search scope for candidate status (default: 'all')",
+            "default": "all"
+          }
+        }
+      },
+      "outputSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "filename",
+          "path",
+          "status",
+          "content",
+          "body"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique candidate document identifier"
+          },
+          "filename": {
+            "type": "string",
+            "description": "Base filename of the candidate document"
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute filesystem path to the candidate document file"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "processed"
+            ],
+            "description": "Current lifecycle status of the document"
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete raw markdown content including YAML frontmatter"
+          },
+          "body": {
+            "type": "string",
+            "description": "Markdown body text with frontmatter stripped"
+          },
+          "year": {
+            "type": "string",
+            "description": "Calendar year extracted from directory hierarchy, creation timestamp, or candidate ID prefix"
+          },
+          "title": {
+            "type": "string",
+            "description": "Document title extracted from frontmatter or heading"
+          },
+          "domain": {
+            "type": "string",
+            "description": "Subject domain extracted from frontmatter"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags extracted from frontmatter"
+          },
+          "repos": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Associated repository identifiers extracted from frontmatter"
+          },
+          "author": {
+            "type": "string",
+            "description": "Contributor username in normalized lowercase format"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "ISO 8601 creation timestamp"
+          },
+          "archivedAt": {
+            "type": "string",
+            "description": "ISO 8601 archive timestamp (if processed)"
+          },
+          "resolution": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "duplicate",
+              "rejected",
+              "insufficient_evidence"
+            ],
+            "description": "Processing resolution if archived"
+          },
+          "archiveNote": {
+            "type": "string",
+            "description": "Archival note or conclusion if provided"
+          },
+          "frontmatter": {
+            "type": "object",
+            "description": "Parsed frontmatter metadata dictionary"
+          }
+        }
+      },
+      "examples": [
+        {
+          "title": "Get pending candidate by ID",
+          "input": {
+            "id": "20260924-a1b2c3"
+          },
+          "output": {
+            "id": "20260924-a1b2c3",
+            "filename": "20260924-112345-a1b2c3-redis-split-brain.md",
+            "path": "/srv/knowledge-inbox/pending/20260924-112345-a1b2c3-redis-split-brain.md",
+            "status": "pending",
+            "content": "---\nid: 20260924-a1b2c3\ntitle: Redis Split Brain\n---\n\n# Redis Split Brain\n\nContent here...",
+            "body": "# Redis Split Brain\n\nContent here...",
+            "title": "Redis Split Brain"
+          }
+        }
+      ]
     }
   },
   "files": [

@@ -38,7 +38,7 @@ Knowledge Inbox 是所有排障经验、人工补充与修正建议进入正式�
 flowchart TD
     A["拉取待审候选<br>(knowledge.list status=pending)"] --> B["版本演进初筛与聚类<br>(梳理作者、仓库与修订链)"]
     B -->|"历史版本已被终版吸收"| C["快速归档收敛<br>(knowledge.archive duplicate/rejected)"]
-    B -->|"有效终版候选"| D["阅读候选正文<br>(files.read / id)"]
+    B -->|"有效终版候选"| D["阅读候选正文<br>(knowledge.get / id)"]
     D --> E["回查源码与现有知识<br>(search.rg / files.read)"]
     E --> F{"事实核验与决议"}
     F -->|"事实确凿且知识缺失"| G["合入正式知识库<br>(flow / rule / runbook / ddl)"]
@@ -57,7 +57,7 @@ ad run knowledge.list --profile skm -- status="pending"
 出参返回 `items` 数组，包含每个待审文档的 `id`、`filename`、`title`、`domain`、`tags`、`createdAt` 等。
 
 ### 阅读候选内容并核查代码
-- 使用 `files.read --profile skm` 查看候选文档完整 Markdown 正文；
+- 使用 `ad run knowledge.get --profile skm -- id="<id>"` 查看候选文档完整 Markdown 正文与元数据；
 - 提取候选文档中的证据链（类、方法、日志特征、表名、配置项）；
 - 使用 `search.rg --profile skm` 在相关工程中核验该逻辑是否真实存在且为当前最新分支逻辑；
 - 查阅目标仓或系统域当前的知识文档，评估该知识是否已被覆盖。

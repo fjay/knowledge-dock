@@ -106,3 +106,192 @@ export async function findPendingCandidate(
 
   return null;
 }
+
+export interface CandidateLookupMatch {
+  filePath: string;
+  filename: string;
+  status: "pending" | "processed";
+  frontmatter: ParsedMarkdown;
+  content: string;
+}
+
+/**
+ * Find a candidate markdown file across pending and processed directories by ID, filename, or direct path.
+ */
+export async function findCandidate(
+  inboxRoot: string,
+  identifier: { id?: string | undefined; path?: string | undefined; status?: "pending" | "processed" | "all" | undefined }
+): Promise<CandidateLookupMatch | null> {
+  const filterStatus = identifier.status ?? "all";
+  const pendingDir = path.join(inboxRoot, "pending");
+  const processedDir = path.join(inboxRoot, "processed");
+
+  // 1. Direct path lookup
+  const candidatePath = identifier.path?.trim() || (identifier.id?.includes(path.sep) || identifier.id?.includes("/") ? identifier.id.trim() : undefined);
+  if (candidatePath) {
+    const resolvedPath = path.isAbsolute(candidatePath)
+      ? path.resolve(candidatePath)
+      : path.resolve(inboxRoot, candidatePath);
+
+    // Path boundary check against inboxRoot
+    const relFromRoot = path.relative(inboxRoot, resolvedPath);
+    if (relFromRoot === ".." || relFromRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relFromRoot)) {
+      const { KnowledgeInboxError } = await import("./errors.ts");
+      throw new KnowledgeInboxError(
+        `Path resolves outside inbox root: ${candidatePath}`,
+        "PATH_OUTSIDE_INBOX",
+        403
+      );
+    }
+
+    if (fs.existsSync(resolvedPath)) {
+      const realTarget = fs.realpathSync(resolvedPath);
+      const realRoot = fs.existsSync(inboxRoot) ? fs.realpathSync(inboxRoot) : inboxRoot;
+      const relFromRealRoot = path.relative(realRoot, realTarget);
+      if (relFromRealRoot === ".." || relFromRealRoot.startsWith(`..${path.sep}`) || path.isAbsolute(relFromRealRoot)) {
+        const { KnowledgeInboxError } = await import("./errors.ts");
+        throw new KnowledgeInboxError(
+          `Symlink target resolves outside inbox root: ${candidatePath}`,
+          "SYMLINK_OUTSIDE_INBOX",
+          403
+        );
+      }
+
+      const stat = await fs.promises.stat(realTarget);
+      if (stat.isFile() && realTarget.toLowerCase().endsWith(".md")) {
+        const content = await fs.promises.readFile(realTarget, "utf-8");
+        const frontmatter = parseFrontmatter(content);
+        const isUnderProcessed =
+          realTarget.startsWith(processedDir + path.sep) || frontmatter.data?.status === "processed";
+        const docStatus = isUnderProcessed ? "processed" : "pending";
+
+        if (filterStatus !== "all" && docStatus !== filterStatus) {
+          return null;
+        }
+
+        return {
+          filePath: resolvedPath,
+          filename: path.basename(resolvedPath),
+          status: docStatus,
+          frontmatter,
+          content,
+        };
+      }
+    }
+  }
+
+  // 2. ID / Filename lookup
+  const rawId = identifier.id ? identifier.id.trim() : undefined;
+  if (!rawId) {
+    return null;
+  }
+
+  const cleanId = path.basename(rawId);
+  const cleanIdNoExt = cleanId.endsWith(".md") ? cleanId.slice(0, -3) : cleanId;
+
+  // Search pending directory
+  if (filterStatus === "pending" || filterStatus === "all") {
+    const pendingFiles = await scanMarkdownFiles(pendingDir);
+    for (const filePath of pendingFiles) {
+      const baseName = path.basename(filePath);
+      const baseNameNoExt = baseName.endsWith(".md") ? baseName.slice(0, -3) : baseName;
+
+      // Check quick filename match
+      const quickMatch =
+        baseName === cleanId ||
+        baseName === `${cleanId}.md` ||
+        baseNameNoExt === cleanIdNoExt;
+
+      let content: string;
+      try {
+        content = await fs.promises.readFile(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+
+      const frontmatter = parseFrontmatter(content);
+      const data = frontmatter.data || {};
+
+      let docId = "";
+      if (data.id && typeof data.id === "string") {
+        docId = data.id.trim();
+      } else {
+        const filenameMatch = baseName.match(/^(\d{8})-\d{6}-([0-9a-fA-F]+)-/);
+        if (filenameMatch) {
+          docId = `${filenameMatch[1]}-${filenameMatch[2]}`;
+        } else {
+          docId = baseNameNoExt;
+        }
+      }
+
+      if (
+        quickMatch ||
+        docId === cleanId ||
+        docId === cleanIdNoExt ||
+        docId === rawId
+      ) {
+        return {
+          filePath,
+          filename: baseName,
+          status: "pending",
+          frontmatter,
+          content,
+        };
+      }
+    }
+  }
+
+  // Search processed directory
+  if (filterStatus === "processed" || filterStatus === "all") {
+    const processedFiles = await scanMarkdownFiles(processedDir);
+    for (const filePath of processedFiles) {
+      const baseName = path.basename(filePath);
+      const baseNameNoExt = baseName.endsWith(".md") ? baseName.slice(0, -3) : baseName;
+
+      const quickMatch =
+        baseName === cleanId ||
+        baseName === `${cleanId}.md` ||
+        baseNameNoExt === cleanIdNoExt;
+
+      let content: string;
+      try {
+        content = await fs.promises.readFile(filePath, "utf-8");
+      } catch {
+        continue;
+      }
+
+      const frontmatter = parseFrontmatter(content);
+      const data = frontmatter.data || {};
+
+      let docId = "";
+      if (data.id && typeof data.id === "string") {
+        docId = data.id.trim();
+      } else {
+        const filenameMatch = baseName.match(/^(\d{8})-\d{6}-([0-9a-fA-F]+)-/);
+        if (filenameMatch) {
+          docId = `${filenameMatch[1]}-${filenameMatch[2]}`;
+        } else {
+          docId = baseNameNoExt;
+        }
+      }
+
+      if (
+        quickMatch ||
+        docId === cleanId ||
+        docId === cleanIdNoExt ||
+        docId === rawId
+      ) {
+        return {
+          filePath,
+          filename: baseName,
+          status: "processed",
+          frontmatter,
+          content,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
