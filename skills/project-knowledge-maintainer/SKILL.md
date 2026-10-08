@@ -50,12 +50,12 @@ metadata:
 
 ### 工作区读写、编辑与审查工具（`--profile skm`）
 - `search.rg`：全工作区跨仓或单仓代码与知识库正则及字面量检索。若限定多路径搜索，必须使用数组索引语法传递，例如 `paths.0="src" paths.1="docs"`。
-- `files.read`：文本分段直读文档或源码，首行附带起止行元数据。
+- `files.read`：文本分段直读文档或源码，清单将 `content` 声明为默认正文；使用支持声明式正文输出的 ActionDock CLI 时，正文原样输出到标准输出，文件路径、起止行和分页信息以 JSON 输出到标准错误流。
 - `files.write`：文本安全写入，自动创建缺失父目录，支持覆盖控制。简单单行内容支持扁平参数（`content="..."`）；大文件、完整 Markdown 文档或复杂多行文本推荐使用 `--input-file <path>` 传递 JSON 文件入参，规避终端转义错误。
 - `files.edit`：局部受控精准编辑，支持起止行范围限定与多重匹配防冲突保护。简单单行替换支持扁平参数；多行大文本块或包含引号等特殊字符的替换内容推荐使用 `--input-file <path>` 传递，杜绝转义截断。
 - `files.list`：受控目录层级浏览。
 - `links.verify`：文档链接与引用有效性校验，检测相对路径死链、图片缺失与失效标题锚点。**核心交付门禁**：在任何模式下完成文档新建（`files.write`）或修改（`files.edit`）后，均须就地运行 `links.verify` 执行死链扫描；若返回存在断链（`brokenCount > 0`），必须结合 `brokenLinks` 清单使用 `files.edit` 立即就地自愈修复，直至断链数为零（`brokenCount === 0`）方可交付或推进流程。
-- `bash.exec`：终端命令直接执行，用于执行版本状态查看、差异核验、改动回滚与测试验证（如 `git status`、`git diff`、`git restore .`、`npm test`）。执行输出直接映射为 `content` 原生终端输出流，退出码独立输出至 stderr。
+- `bash.exec`：终端命令直接执行，用于版本状态查看、差异核验、改动回滚与测试验证（如 `git status`、`git diff`、`git restore .`、`npm test`）。清单将 `content` 声明为默认正文；使用支持声明式正文输出的 ActionDock CLI 时，正文原样输出到标准输出，`exitCode` 与截断标记以 JSON 输出到标准错误流。子进程退出码不会自动成为 CLI 退出码，程序化检查结果时使用 `--json`。
 
 ### 终端执行与改动回滚工具（`--profile skm`）
 - **查看状态、比对差异与变更回滚**：
@@ -79,6 +79,7 @@ metadata:
   ```bash
   ad run knowledge.get --profile skm -- id="<candidateId>"
   ```
+  正文仅通过 `content` 返回原始 Markdown（包含 YAML 头部），不再重复返回 `body`。使用支持声明式正文输出的 ActionDock CLI 时，默认正文写入标准输出，其他元数据以 JSON 写入标准错误流；需要完整执行信封时在 `--` 前添加 `--json`，不要解析可能混有日志的标准错误流。
 - **归档候选文档**（决议取值：`accepted` / `duplicate` / `insufficient_evidence` / `rejected`）：
   ```bash
   ad run knowledge.archive --profile skm -- id="<candidateId>" resolution="accepted" note="已合入 <目标文档>"

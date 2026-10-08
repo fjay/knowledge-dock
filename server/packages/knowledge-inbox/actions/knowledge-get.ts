@@ -182,7 +182,6 @@ export async function executeKnowledgeGet(
     path: path.resolve(filePath),
     status,
     content,
-    body: frontmatter.body,
     ...(title ? { title } : {}),
     ...(domain ? { domain } : {}),
     ...(tags && tags.length > 0 ? { tags } : {}),

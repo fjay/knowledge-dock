@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 describe("workspace/search.rg end-to-end integration via ad CLI with real ripgrep", () => {
   it("executes real ripgrep process and returns actual matches on filesystem fixture", () => {
@@ -212,6 +212,35 @@ describe("workspace/search.rg end-to-end integration via ad CLI with real ripgre
       assert.equal(readParsed.data.startLine, 2);
       assert.equal(readParsed.data.endLine, 2);
       assert.equal(readParsed.data.content, "line2");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("prints files.read content with real newlines and sends line metadata to stderr by default", () => {
+    const projectRoot = path.resolve(import.meta.dirname, "..");
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ws-e2e-raw-read-"));
+    try {
+      fs.writeFileSync(path.join(tmpDir, "hello.txt"), "line1\nline2\nline3\n");
+      const result = spawnSync("ad", [
+        "run", "files.read",
+        "--data-dir", path.join(tmpDir, "data"),
+        "-c", `WORKSPACE_ROOT=${tmpDir}`,
+        "--", "path=hello.txt", "startLine:=1", "maxLines:=2",
+      ], {
+        cwd: projectRoot,
+        encoding: "utf8",
+        env: { ...process.env, ACTIONDOCK_HOME: path.join(tmpDir, "home") },
+        timeout: 15000,
+      });
+      if (result.error) throw result.error;
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(result.stdout, "line1\nline2\n");
+      assert.match(result.stderr, /"path": "hello.txt"/);
+      assert.match(result.stderr, /"startLine": 1/);
+      assert.match(result.stderr, /"endLine": 2/);
+      assert.match(result.stderr, /"hasMore": true/);
+      assert.doesNotMatch(result.stderr, /"content"\s*:/);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }

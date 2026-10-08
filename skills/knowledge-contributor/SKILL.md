@@ -21,7 +21,7 @@ metadata:
   - `workspace/files.read`：深入直读源码文件或现有知识文档的具体行上下文，核实具体的流程逻辑、代码分支与枚举真实性；
   - `workspace/files.list`：目录层级浏览，核实模块架构结构与文档目录是否存在对应文件；
   - `knowledge/knowledge.collect`：在完成全套立体初查、确证存在缺漏并经开发者显式确认后，执行候选文档安全投递入池；
-  - `knowledge/knowledge.get`：根据候选标识或文件路径获取排障经验待审池中候选文档的完整详情与正文内容；
+  - `knowledge/knowledge.get`：根据候选标识或文件路径获取候选文档完整详情；正文仅通过 `content` 返回原始 Markdown（包含 YAML 头部），不再返回重复的 `body`；
   - `knowledge/knowledge.query`：根据候选标识、贡献者用户名（`author`）、关键词或关联代码仓，灵活查询排障经验待审池中候选文档的沉淀流转进度、归档状态（`status`）与归档备注（`archiveNote` / `archive_note`）；
   - `knowledge/knowledge.leaderboard`：聚合待审池与已归档候选文档，按采纳数、采纳率及提交总量查询贡献排行榜与总览统计，支持按周期、年份与仓库多维统计；
 - 严禁特权写操作红线：严禁试图越权调用任何特权写操作或维护动作（如代码写入、分支同步、文档发布或检查点推进）；
@@ -149,7 +149,7 @@ ad run knowledge/knowledge.collect --profile sk --input-file /tmp/collect-input.
 
 ### 候选经验沉淀进度与归档备注查询调用
 
-支持按候选标识、贡献者用户名或关键词查询流转状态与归档备注：
+支持按候选标识、贡献者用户名或关键词查询流转状态与归档备注。`knowledge.get` 已将 `content` 声明为默认正文；使用支持声明式正文输出的 ActionDock CLI 同步调用时，正文原样输出到标准输出，其他元数据以 JSON 输出到标准错误流。需要程序化读取完整执行信封时，在 `--` 前添加 `--json`；标准错误流可能混有日志，不用于数据解析。
 
 ```bash
 # 按候选标识直接获取候选文档完整正文与元数据

@@ -13,6 +13,12 @@
 
 `knowledge.collect` 的 `filename` 是可选建议名；服务端会生成实际文件名。它只检查内容是否非空，不校验事实、查重或强制候选格式。投递前应按[知识格式](../../../docs/knowledge-model.md)整理证据，并经过贡献者确认。
 
+## 正文与元数据输出
+
+`knowledge.get` 只通过 `content` 返回完整原始 Markdown（包含 YAML 头部），不再返回重复的 `body` 字段；候选编号、路径、状态和其他元数据仍保留。
+
+清单已将 `content` 声明为默认正文。使用支持声明式正文输出的 ActionDock CLI 同步调用时，正文原样输出到标准输出，其他字段以 JSON 输出到标准错误流。需要程序化读取完整结果时，在 `--` 前添加 `--json`，获取完整执行信封，不应用正文分流。标准错误流也可能包含日志，不应作为独立的数据协议解析。
+
 ## 常用调用
 
 ```bash
@@ -20,6 +26,10 @@ ad run knowledge/knowledge.collect --profile sk -- \
   content="# 支付超时排障候选" filename="payment-timeout"
 
 ad run knowledge/knowledge.get --profile sk -- \
+  id="20260924-a1b2c3"
+
+# 完整执行信封，包含 content 与所有元数据
+ad run knowledge/knowledge.get --profile sk --json -- \
   id="20260924-a1b2c3"
 
 ad run knowledge/knowledge.query --profile sk -- \

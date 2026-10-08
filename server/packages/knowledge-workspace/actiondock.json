@@ -238,6 +238,11 @@
     "files.read": {
       "entry": "actions/files-read.ts",
       "description": "Read UTF-8 text from a file in the engineering workspace. Supports reading from a specific line with bounded output. Paths are relative to the workspace root.",
+      "annotations": {
+        "actiondock.cli": {
+          "textField": "content"
+        }
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -525,6 +530,11 @@
     "bash.exec": {
       "entry": "actions/bash-exec.ts",
       "description": "Execute a bash shell command in the engineering workspace.",
+      "annotations": {
+        "actiondock.cli": {
+          "textField": "content"
+        }
+      },
       "inputSchema": {
         "type": "object",
         "properties": {

@@ -14,13 +14,25 @@
 
 入参、默认值和返回结构以 [actiondock.json](actiondock.json) 为准。路径会经过工作区路径策略检查；`bash.exec` 只校验工作目录，命令本身仍可调用容器中的其他资源，因此它是特权动作。
 
+## 正文与元数据输出
+
+`files.read` 和 `bash.exec` 在清单中将 `content` 声明为默认正文。使用支持声明式正文输出的 ActionDock CLI 同步调用时，正文保留真实换行输出到标准输出，其余字段以 JSON 输出到标准错误流：
+
+- `files.read` 的元数据包含文件路径、行号范围、`hasMore` 和可选截断标记。
+- `bash.exec` 的元数据包含子进程 `exitCode` 和截断标记；子进程退出码仍是业务结果字段，不会自动成为 CLI 退出码。
+- 其他工作区动作保持完整结构化输出。需要程序化消费时，在 `--` 前添加 `--json` 获取完整执行信封，不应用正文分流。标准错误流还可能包含日志，不应作为独立的数据协议解析。
+
 ## 常用调用
 
 ```bash
 ad run workspace/search.rg --profile sk -- pattern="PaymentStatus"
 ad run workspace/files.read --profile sk -- \
   path="order-service/docs/knowledge/overview.md" startLine:=1 maxLines:=80
+ad run workspace/files.read --profile sk --json -- \
+  path="order-service/docs/knowledge/overview.md" startLine:=1 maxLines:=80
 ad run workspace/files.list --profile sk -- path="order-service" depth:=2
+ad run workspace/bash.exec --profile skm -- \
+  command="git diff" cwd="order-service"
 ad run workspace/links.verify --profile skm -- \
   path="order-service/docs/knowledge"
 ```

@@ -57,7 +57,7 @@ ad run knowledge.list --profile skm -- status="pending"
 出参返回 `items` 数组，包含每个待审文档的 `id`、`filename`、`title`、`domain`、`tags`、`createdAt` 等。
 
 ### 阅读候选内容并核查代码
-- 使用 `ad run knowledge.get --profile skm -- id="<id>"` 查看候选文档完整 Markdown 正文与元数据；
+- 使用 `ad run knowledge.get --profile skm -- id="<id>"` 查看候选文档完整原始 Markdown（包含 YAML 头部）；正文仅保留在 `content` 中，不再重复返回 `body`。使用支持声明式正文输出的 ActionDock CLI 时，默认正文写入标准输出，元数据以 JSON 写入标准错误流；需要程序化读取完整执行信封时添加 `--json`，不要解析可能混有日志的标准错误流；
 - 提取候选文档中的证据链（类、方法、日志特征、表名、配置项）；
 - 使用 `search.rg --profile skm` 在相关工程中核验该逻辑是否真实存在且为当前最新分支逻辑；
 - 查阅目标仓或系统域当前的知识文档，评估该知识是否已被覆盖。

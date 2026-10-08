@@ -923,6 +923,11 @@
     "knowledge.get": {
       "entry": "actions/knowledge-get.ts",
       "description": "Get full details and complete Markdown content of a knowledge candidate document by identifier (ID, filename, or relative/absolute path) across pending and processed archives.",
+      "annotations": {
+        "actiondock.cli": {
+          "textField": "content"
+        }
+      },
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -961,8 +966,7 @@
           "filename",
           "path",
           "status",
-          "content",
-          "body"
+          "content"
         ],
         "properties": {
           "id": {
@@ -988,10 +992,6 @@
           "content": {
             "type": "string",
             "description": "Complete raw markdown content including YAML frontmatter"
-          },
-          "body": {
-            "type": "string",
-            "description": "Markdown body text with frontmatter stripped"
           },
           "year": {
             "type": "string",
@@ -1063,7 +1063,6 @@
             "path": "/srv/knowledge-inbox/pending/20260924-112345-a1b2c3-redis-split-brain.md",
             "status": "pending",
             "content": "---\nid: 20260924-a1b2c3\ntitle: Redis Split Brain\n---\n\n# Redis Split Brain\n\nContent here...",
-            "body": "# Redis Split Brain\n\nContent here...",
             "title": "Redis Split Brain"
           }
         }

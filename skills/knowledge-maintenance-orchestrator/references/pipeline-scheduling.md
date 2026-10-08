@@ -123,12 +123,13 @@ ad playbook show orchestrator/scheduled-maintenance
   - 仅处理指定仓库：传入 `only="order-service"`。
   - 仅执行代码仓巡检（跳过系统知识库）：传入 `skipSystemKnowledge:=true`。
   - 跳过待审池消费：传入 `skipInbox:=true`。
-- 异步模式执行与任务凭据查验：
-  - 提交异步长任务：
-    ```bash
-    ad run orchestrator.pipeline --async -- profile="skm" dispatchCmd='...'
-    ```
-  - 查验执行快照与历史事件流：
+- 结果展示与程序化消费：
+  - 流水线不声明默认正文，默认保留完整结构化结果；预演核验依赖 `dryRunResults` 中的派发命令，不能只查看报告。
+  - 使用支持正文选择的 ActionDock CLI 时，正式运行可在 `--` 前添加 `--text-field report`，将 Markdown 报告原样输出到标准输出，其他统计和明细以 JSON 输出到标准错误流。
+  - 需要程序化消费完整执行信封时，在 `--` 前添加 `--json`；它与 `--text-field` 互斥。标准错误流还可能包含日志，不应作为独立的数据协议解析。
+- 执行模式与任务追踪：
+  - `orchestrator.pipeline` 是本地控制平面动作，不支持 CLI 的 `--async`；需要后台运行时使用上述本机 `nohup` 方式。
+  - 使用 `--json` 获取本次执行的 `runId` 后，可在相同本地动作包目录查验执行记录：
     ```bash
     ad runs show <runId>
     ```

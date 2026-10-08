@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { execSync } from "node:child_process";
+import { execSync, spawnSync } from "node:child_process";
 import {
   createTestRuntime,
   createTestPlatform,
@@ -160,19 +160,42 @@ describe("workspace/bash.exec", () => {
     }
   });
 
-  it("outputs unboxed raw content to stdout and exitCode to stderr via ad CLI", () => {
+  it("outputs unboxed content to stdout and exitCode to stderr while preserving JSON mode via ad CLI", () => {
     const projectRoot = path.resolve(import.meta.dirname, "..");
-    const res = execSync(
-      `ad run bash.exec -c WORKSPACE_ROOT=${JSON.stringify(projectRoot)} -- command="echo 'raw terminal stream'"`,
-      {
-        cwd: projectRoot,
-        encoding: "utf8",
-      }
-    );
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "ws-bash-cli-"));
+    try {
+      const runCli = (options: string[] = []) => {
+        const result = spawnSync("ad", [
+          "run", "bash.exec",
+          "--data-dir", path.join(tmpDir, "data"),
+          "-c", `WORKSPACE_ROOT=${tmpDir}`,
+          ...options,
+          "--", "command=printf 'raw terminal stream\\n'",
+        ], {
+          cwd: projectRoot,
+          encoding: "utf8",
+          env: { ...process.env, ACTIONDOCK_HOME: path.join(tmpDir, "home") },
+          timeout: 15000,
+        });
+        if (result.error) throw result.error;
+        assert.equal(result.status, 0, result.stderr);
+        return result;
+      };
 
-    // stdout must contain the raw string with real newline, without JSON escaping
-    assert.match(res, /raw terminal stream/);
-    assert.ok(!res.includes("\"exitCode\""));
-    assert.ok(!res.includes("\"content\""));
+      const raw = runCli();
+      assert.equal(raw.stdout, "raw terminal stream\n\n");
+      assert.doesNotMatch(raw.stdout, /"(?:exitCode|content)"\s*:/);
+      assert.match(raw.stderr, /"exitCode": 0/);
+      assert.match(raw.stderr, /"truncated": false/);
+      assert.doesNotMatch(raw.stderr, /"content"\s*:/);
+
+      const result = JSON.parse(runCli(["--json"]).stdout);
+      assert.equal(result.ok, true);
+      assert.equal(result.data.content, "raw terminal stream\n");
+      assert.equal(result.data.exitCode, 0);
+      assert.equal(result.data.truncated, false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
   });
 });
