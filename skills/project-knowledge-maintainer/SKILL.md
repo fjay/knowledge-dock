@@ -75,6 +75,10 @@ metadata:
   ```bash
   ad run knowledge.list --profile skm -- status="pending"
   ```
+- **获取候选文档完整正文**：
+  ```bash
+  ad run knowledge.get --profile skm -- id="<candidateId>"
+  ```
 - **归档候选文档**（决议取值：`accepted` / `duplicate` / `insufficient_evidence` / `rejected`）：
   ```bash
   ad run knowledge.archive --profile skm -- id="<candidateId>" resolution="accepted" note="已合入 <目标文档>"

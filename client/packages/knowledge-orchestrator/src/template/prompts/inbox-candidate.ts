@@ -49,7 +49,7 @@ export function buildInboxCandidatePrompt(candidate: any = {}): string {
     ``,
     `## 审查核验与决议准则`,
     ``,
-    `- 事实核验与直读：调用 ad run knowledge/knowledge.get --profile skm -- id="${id}" 调阅候选内容；调用 ad run workspace/files.read --profile skm 结合真实代码仓核验符号与逻辑，严禁未查代码轻率驳回。`,
+    `- 事实核验与直读：调用 ad run knowledge/knowledge.get --profile skm -- id="${id}" 调阅候选内容；核验业务源码可调用 ad run workspace/files.read --profile skm -- path="<源码路径>" 结合真实代码仓核对符号与逻辑，严禁未查代码轻率驳回。`,
     `- 四路决议判定准则（杜绝偷懒逃避沉淀）：`,
     `  - 采纳并沉淀（accepted）：经验具通用排障或架构指导价值，融入对应代码仓或系统知识仓 runbook 及对应分类文档；`,
     `  - 重复条目（duplicate）：已有正式知识库文档完全覆盖该场景，或已被终版候选吸收，归档说明中必须注明被覆盖文档路径或终版候选标识；`,
