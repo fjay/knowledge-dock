@@ -96,3 +96,35 @@ export async function completeRemoteRepo(
   }
   return parsed.data ?? parsed;
 }
+
+/**
+ * 调用远端 maintenance.publish 提交并推送仓库变更
+ */
+export async function publishRemoteRepo(
+  profile: string = "skm",
+  repoPath: string,
+  options: { branch?: string; push?: boolean; repoType?: string } = {},
+  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
+): Promise<any> {
+  const safeProfile = validateProfile(profile);
+  let cmd = `ad run maintenance.publish --profile ${safeProfile} --json -- path="${escapeQuotes(repoPath)}"`;
+  if (options.repoType) {
+    cmd += ` repoType="${escapeQuotes(options.repoType)}"`;
+  }
+  if (options.branch) {
+    cmd += ` branch="${escapeQuotes(options.branch)}"`;
+  }
+  if (options.push !== undefined) {
+    cmd += ` push=${options.push ? "true" : "false"}`;
+  }
+  const { stdout } = await execFn(cmd);
+  if (!stdout || !stdout.trim()) {
+    return { status: "success", pushed: options.push ?? true, committed: false };
+  }
+  const parsed = JSON.parse(stdout);
+  if (parsed.ok === false && parsed.error) {
+    throw new Error(parsed.error.message || `ActionDock 错误: ${parsed.error.code}`);
+  }
+  return parsed.data ?? parsed;
+}
+

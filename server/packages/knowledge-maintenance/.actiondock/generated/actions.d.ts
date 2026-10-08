@@ -285,7 +285,7 @@ export namespace Actions {
       /** Local repository workspace directory path */
       path: string;
       /** Repository architecture type. Auto-detected if omitted. */
-      repoType?: "code" | "system_knowledge";
+      repoType?: "code" | "system_knowledge" | "inbox";
       /** Target branch to push to. Defaults to 'master' for system_knowledge and 'docs' for code repositories. */
       branch?: string;
       /** Git commit message */

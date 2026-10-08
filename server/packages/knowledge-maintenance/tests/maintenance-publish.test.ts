@@ -240,4 +240,109 @@ describe("maintenance.publish", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("resolves to main branch by default when repoType is inbox", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "publish-inbox-"));
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", "git@github.com:org/knowledge-inbox.git\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd.startsWith("branch -a")) {
+          handle.emitOutput("stdout", "main\norigin/main\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "status --porcelain") {
+          handle.emitOutput("stdout", "");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --verify origin/main") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-list origin/main..main") {
+          handle.emitOutput("stdout", "");
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(publishAction, {
+        path: tmpDir,
+        repoType: "inbox",
+      });
+
+      assert.equal(res.status, "no_changes");
+      assert.equal(res.committed, false);
+      assert.equal(res.pushed, false);
+      assert.equal(res.branch, "main");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("pushes unpushed commits and returns pushed: true when working tree is clean", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "publish-unpushed-"));
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      const executedCommands: string[] = [];
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        executedCommands.push(cmd);
+
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", "git@github.com:org/knowledge-inbox.git\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd.startsWith("branch -a")) {
+          handle.emitOutput("stdout", "main\norigin/main\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "status --porcelain") {
+          handle.emitOutput("stdout", "");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --verify origin/main") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-list origin/main..main") {
+          handle.emitOutput("stdout", "c0ffee112233445566778899aabbccddeeff0011\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "push origin main") {
+          handle.emitOutput("stdout", "To origin\n   1111222..c0ffee1  main -> main\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(publishAction, {
+        path: tmpDir,
+        repoType: "inbox",
+        push: true,
+      });
+
+      assert.equal(res.status, "success");
+      assert.equal(res.committed, false);
+      assert.equal(res.pushed, true);
+      assert.equal(res.branch, "main");
+      assert.ok(res.message.includes("origin/main"));
+      assert.ok(executedCommands.includes("push origin main"));
+      assert.ok(!executedCommands.some((c) => c.startsWith("commit")));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

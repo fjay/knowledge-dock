@@ -1,5 +1,5 @@
 import { defaultExec, triggerDispatch } from "../client/runner.ts";
-import { queryRemoteInboxList } from "../client/remote.ts";
+import { queryRemoteInboxList, publishRemoteRepo } from "../client/remote.ts";
 import { buildInboxPlaceholders } from "../template/placeholders.ts";
 import { renderTemplate } from "../template/engine.ts";
 import { formatDuration } from "../ui/format.ts";
@@ -14,6 +14,7 @@ export interface InboxPhaseExtraContext {
   startTime?: number;
   codeReposCount?: number;
   systemReposCount?: number;
+  inboxPath?: string;
   writeLog?: (msg: string) => void;
 }
 
@@ -227,11 +228,36 @@ export async function runInboxPhase(
 
   writeLog(`[PHASE3] Knowledge Inbox 待审池巡检消费完毕：总数 ${inboxTotal} 篇，成功归档 ${inboxCompleted} 篇，失败 ${inboxFailed} 篇`);
 
+  let inboxPushed: boolean | undefined = undefined;
+  let inboxPushMessage: string | null = null;
+
+  if (inboxCompleted > 0 && !options.dryRun) {
+    const targetInboxPath = extraContext.inboxPath || "/srv/knowledge-inbox";
+    writeLog(`[PHASE3] 检测到已归档 ${inboxCompleted} 篇候选文档，开始收尾推送待审池仓库 (${targetInboxPath})...`);
+    try {
+      const publishRes = await publishRemoteRepo(
+        profile,
+        targetInboxPath,
+        { push: true },
+        execFn
+      );
+      inboxPushed = publishRes.pushed === true || publishRes.status === "success";
+      inboxPushMessage = publishRes.message || "待审池仓库已成功推送到远端";
+      writeLog(`[PHASE3] 待审池仓库推送完成: ${inboxPushMessage}`);
+    } catch (err: any) {
+      inboxPushed = false;
+      inboxPushMessage = `待审池推送失败: ${err.message}`;
+      writeLog(`[WARN] 待审池仓库收尾推送异常: ${err.message}，容错不阻断报告生成`);
+    }
+  }
+
   return {
     inboxTotal,
     inboxCompleted,
     inboxFailed,
     inboxSkipped: false,
     inboxResults,
+    ...(inboxPushed !== undefined ? { inboxPushed } : {}),
+    inboxPushMessage,
   };
 }

@@ -253,10 +253,14 @@ export async function runPipeline(
 
   // 8. 第三阶段：Knowledge Inbox 全局待审池串行巡检与消费
   writeLog(`[PHASE3] 开始第三阶段：Knowledge Inbox 全局待审池巡检与消费`);
+  const inboxRepoItem = allRepos.find((item) => item.repoType === "inbox");
+  const inboxPath = inboxRepoItem?.path || "/srv/knowledge-inbox";
+
   const inboxSummary = await runInboxPhase(options, hooks, {
     startTime,
     codeReposCount: codeRepos.length,
     systemReposCount: systemRepos.length,
+    inboxPath,
     writeLog,
   });
 
@@ -280,6 +284,8 @@ export async function runPipeline(
     inboxFailed: inboxSummary.inboxFailed,
     inboxSkipped: inboxSummary.inboxSkipped,
     inboxResults: inboxSummary.inboxResults,
+    inboxPushed: inboxSummary.inboxPushed,
+    inboxPushMessage: inboxSummary.inboxPushMessage ?? null,
   };
 
   const mdReport = generateMarkdownReport(summary);

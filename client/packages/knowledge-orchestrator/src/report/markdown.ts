@@ -18,6 +18,8 @@ export function generateMarkdownReport(reportData: MarkdownReportData = {}): str
     inboxFailed = 0,
     inboxSkipped = false,
     inboxResults = [],
+    inboxPushed = undefined,
+    inboxPushMessage = null,
   } = reportData;
 
   const totalDurationStr = formatDuration(totalElapsedMs);
@@ -33,6 +35,9 @@ export function generateMarkdownReport(reportData: MarkdownReportData = {}): str
   md += `- 待审处理失败数：${inboxFailed}\n`;
   if (inboxSkipped) {
     md += `- 待审池状态：已跳过\n`;
+  }
+  if (inboxPushed !== undefined) {
+    md += `- 待审池远端推送：${inboxPushed ? "已推送到远端" : (inboxPushMessage || "推送失败")}\n`;
   }
   md += `- 流水线总耗时：${totalDurationStr}\n\n`;
   md += `## 仓库执行明细\n\n`;

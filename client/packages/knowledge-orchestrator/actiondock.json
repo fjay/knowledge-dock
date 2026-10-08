@@ -330,6 +330,17 @@
                 }
               }
             }
+          },
+          "inboxPushed": {
+            "type": "boolean",
+            "description": "Whether the inbox repository was pushed to remote origin"
+          },
+          "inboxPushMessage": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Result message from pushing the inbox repository"
           }
         }
       },

@@ -93,6 +93,8 @@ export interface InboxPhaseSummary {
   inboxFailed: number;
   inboxSkipped: boolean;
   inboxResults: InboxCandidateResult[];
+  inboxPushed?: boolean | undefined;
+  inboxPushMessage?: string | null | undefined;
 }
 
 export interface PipelineSummary {
@@ -105,14 +107,16 @@ export interface PipelineSummary {
   results: RepoResult[];
   markdownReport: string;
   reportSaved: boolean;
-  logFile?: string | null;
-  dryRun?: false;
-  success?: boolean;
-  inboxTotal?: number;
-  inboxCompleted?: number;
-  inboxFailed?: number;
-  inboxSkipped?: boolean;
-  inboxResults?: InboxCandidateResult[];
+  logFile?: string | null | undefined;
+  dryRun?: false | undefined;
+  success?: boolean | undefined;
+  inboxTotal?: number | undefined;
+  inboxCompleted?: number | undefined;
+  inboxFailed?: number | undefined;
+  inboxSkipped?: boolean | undefined;
+  inboxResults?: InboxCandidateResult[] | undefined;
+  inboxPushed?: boolean | undefined;
+  inboxPushMessage?: string | null | undefined;
 }
 
 export interface PipelineHooks {
@@ -155,4 +159,6 @@ export interface MarkdownReportData {
   inboxFailed?: number;
   inboxSkipped?: boolean;
   inboxResults?: InboxCandidateResult[];
+  inboxPushed?: boolean | undefined;
+  inboxPushMessage?: string | null | undefined;
 }

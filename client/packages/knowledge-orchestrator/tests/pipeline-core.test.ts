@@ -19,6 +19,7 @@ import {
   isRepoCompleted,
   generateMarkdownReport,
   queryRemoteInboxList,
+  publishRemoteRepo,
   runInboxPhase,
   runPipeline,
   type DryRunResult,
@@ -2127,6 +2128,15 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
           stderr: "",
         };
       }
+      if (cmd.includes("maintenance.publish")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: { status: "success", committed: false, pushed: true, message: "推送成功" },
+          }),
+          stderr: "",
+        };
+      }
       return { stdout: "{}", stderr: "" };
     };
 
@@ -2163,6 +2173,7 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
     assert.equal(summary.inboxCompleted, 1);
     assert.equal(summary.inboxFailed, 0);
     assert.equal(summary.inboxSkipped, false);
+    assert.equal(summary.inboxPushed, true);
 
     // 验证派发包含了代码仓与待审候选
     assert.deepEqual(dispatchedCmds, ["demo-service", "20260924-p3"]);
@@ -2218,6 +2229,15 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
           stderr: "",
         };
       }
+      if (cmd.includes("maintenance.publish")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: { status: "success", committed: false, pushed: true, message: "推送成功" },
+          }),
+          stderr: "",
+        };
+      }
       return { stdout: "{}", stderr: "" };
     };
 
@@ -2254,6 +2274,7 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
     assert.equal(summary.inboxTotal, 2);
     assert.equal(summary.inboxCompleted, 2);
     assert.equal(summary.inboxFailed, 0);
+    assert.equal(summary.inboxPushed, true);
 
     // 核心断言：待审池两篇候选，仅有 v1 触发实际派发，v2 自动收敛跳过
     assert.deepEqual(dispatchedTargets, ["demo-service", "20260924-v1"]);
@@ -2263,6 +2284,280 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
     assert.ok(summary.markdownReport.includes("- 待审成功归档数：2"));
     assert.ok(summary.markdownReport.includes("20260924-v1"));
     assert.ok(summary.markdownReport.includes("20260924-v2"));
+  });
+
+  await t.test("publishRemoteRepo 远程调用命令拼接与参数安全转义", async () => {
+    const executedCmds: string[] = [];
+    const mockExec = async (cmd: string) => {
+      executedCmds.push(cmd);
+      return {
+        stdout: JSON.stringify({
+          ok: true,
+          data: {
+            status: "success",
+            committed: false,
+            pushed: true,
+            message: "Successfully pushed to origin/main",
+          },
+        }),
+        stderr: "",
+      };
+    };
+
+    const res = await publishRemoteRepo(
+      "skm",
+      "/srv/knowledge-inbox",
+      { push: true, branch: "main", repoType: "inbox" },
+      mockExec
+    );
+
+    assert.equal(executedCmds.length, 1);
+    assert.equal(
+      executedCmds[0],
+      'ad run maintenance.publish --profile skm --json -- path="/srv/knowledge-inbox" repoType="inbox" branch="main" push=true'
+    );
+    assert.equal(res.status, "success");
+    assert.equal(res.pushed, true);
+  });
+
+  await t.test("runInboxPhase: 当 inboxCompleted > 0 时触发待审池 publishRemoteRepo 并标记 inboxPushed: true", async () => {
+    const executedCmds: string[] = [];
+    let inboxItems = [{ id: "cand-1", filename: "c1.md", title: "候选文档 1" }];
+
+    const mockExec = async (cmd: string) => {
+      executedCmds.push(cmd);
+      if (cmd.includes("knowledge.list")) {
+        return {
+          stdout: JSON.stringify({ ok: true, data: { items: [...inboxItems] } }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("maintenance.publish")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: { status: "success", committed: false, pushed: true, message: "推送成功" },
+          }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    let dispatched = false;
+    const dispatchFn = async () => {
+      dispatched = true;
+      return { pid: 1, output: "", exited: true };
+    };
+    const sleepFn = async () => {
+      if (dispatched) {
+        inboxItems = [];
+      }
+    };
+
+    const logs: string[] = [];
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "test-cmd", timeout: 1, interval: 0.001 },
+      { execFn: mockExec, dispatchFn, sleepFn },
+      { inboxPath: "/srv/custom-inbox", writeLog: (m) => logs.push(m) }
+    );
+
+    assert.equal(summary.inboxCompleted, 1);
+    assert.equal(summary.inboxPushed, true);
+    assert.equal(summary.inboxPushMessage, "推送成功");
+
+    // 确认 publishRemoteRepo 确实被调用，且路径指向 extraContext.inboxPath
+    const publishCmd = executedCmds.find((c) => c.includes("maintenance.publish"));
+    assert.ok(publishCmd, "必须触发 maintenance.publish");
+    assert.ok(publishCmd.includes("/srv/custom-inbox"), "必须向 extraContext.inboxPath 指定的待审池路径推送");
+    assert.ok(publishCmd.includes("push=true"), "必须开启 push=true");
+    assert.ok(logs.some((l) => l.includes("收尾推送待审池仓库 (/srv/custom-inbox)")));
+  });
+
+  await t.test("runInboxPhase: 当待审池为空或 0 篇完成时不触发冗余推送", async () => {
+    const executedCmds: string[] = [];
+
+    // 场景 A：待审池扫描为空
+    const mockExecEmpty = async (cmd: string) => {
+      executedCmds.push(cmd);
+      if (cmd.includes("knowledge.list")) {
+        return { stdout: JSON.stringify({ ok: true, data: { items: [] } }), stderr: "" };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    const summaryEmpty = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "test-cmd" },
+      { execFn: mockExecEmpty }
+    );
+
+    assert.equal(summaryEmpty.inboxTotal, 0);
+    assert.equal(summaryEmpty.inboxCompleted, 0);
+    assert.equal(summaryEmpty.inboxPushed, undefined);
+    assert.ok(!executedCmds.some((c) => c.includes("maintenance.publish")), "待审池为空时严禁触发冗余推送");
+
+    // 场景 B：有候选但全部处理超时失败（inboxCompleted === 0, inboxFailed === 1）
+    executedCmds.length = 0;
+    let virtualTime = 0;
+    const nowFn = () => virtualTime;
+    const sleepFn = async (ms: number) => {
+      virtualTime += ms;
+    };
+    const mockExecFail = async (cmd: string) => {
+      executedCmds.push(cmd);
+      if (cmd.includes("knowledge.list")) {
+        // 候选始终未移出待审池
+        return {
+          stdout: JSON.stringify({ ok: true, data: { items: [{ id: "fail-cand", filename: "f.md" }] } }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    const summaryFail = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "test-cmd", timeout: 1, interval: 30 },
+      { execFn: mockExecFail, sleepFn, nowFn }
+    );
+
+    assert.equal(summaryFail.inboxTotal, 1);
+    assert.equal(summaryFail.inboxCompleted, 0);
+    assert.equal(summaryFail.inboxFailed, 1);
+    assert.equal(summaryFail.inboxPushed, undefined);
+    assert.ok(!executedCmds.some((c) => c.includes("maintenance.publish")), "归档 0 篇时不触发冗余推送");
+  });
+
+  await t.test("runInboxPhase: 待审池推送失败时容错记录警告且不阻断结算", async () => {
+    let inboxItems = [{ id: "cand-err", filename: "err.md", title: "容错测试候选" }];
+    const logs: string[] = [];
+
+    const mockExec = async (cmd: string) => {
+      if (cmd.includes("knowledge.list")) {
+        return { stdout: JSON.stringify({ ok: true, data: { items: [...inboxItems] } }), stderr: "" };
+      }
+      if (cmd.includes("maintenance.publish")) {
+        // 模拟远端 Git 抛出网络异常
+        return {
+          stdout: JSON.stringify({
+            ok: false,
+            error: { code: "GIT_ERROR", message: "fatal: remote origin disconnected" },
+          }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    let dispatched = false;
+    const dispatchFn = async () => {
+      dispatched = true;
+      return { pid: 1, output: "", exited: true };
+    };
+    const sleepFn = async () => {
+      if (dispatched) {
+        inboxItems = [];
+      }
+    };
+
+    const summary = await runInboxPhase(
+      { profile: "skm", dispatchCmd: "test-cmd", timeout: 1, interval: 0.001 },
+      { execFn: mockExec, dispatchFn, sleepFn },
+      { writeLog: (m) => logs.push(m) }
+    );
+
+    assert.equal(summary.inboxCompleted, 1);
+    assert.equal(summary.inboxPushed, false);
+    assert.ok(summary.inboxPushMessage?.includes("remote origin disconnected"));
+    assert.ok(logs.some((l) => l.includes("[WARN] 待审池仓库收尾推送异常")));
+  });
+
+  await t.test("runPipeline: 从 allRepos 解析 inboxPath 并完成收尾推送闭环", async () => {
+    const mockScanDataWithInbox = {
+      batch: true,
+      results: [
+        {
+          repo: "order-service",
+          path: "/srv/workspace/order-service",
+          branch: "release",
+          status: "changed",
+          hasChanges: true,
+          from: "111",
+          to: "222",
+          commitCount: 1,
+          commits: [{ hash: "222", shortHash: "222", message: "feat: update" }],
+        },
+        {
+          repo: "knowledge-inbox",
+          path: "/srv/repos/custom-knowledge-inbox",
+          repoType: "inbox",
+        },
+      ],
+    };
+
+    let inboxItems = [{ id: "cand-pipeline", filename: "p.md", title: "流水线候选" }];
+    const executedCmds: string[] = [];
+
+    const mockExec = async (cmd: string) => {
+      executedCmds.push(cmd);
+      if (cmd.includes("maintenance.list")) {
+        if (!cmd.includes("-- path=")) {
+          return { stdout: JSON.stringify({ ok: true, data: mockScanDataWithInbox }), stderr: "" };
+        }
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: { repo: "order-service", status: "upToDate", from: "222", to: "222", hasChanges: false },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("knowledge.list")) {
+        return { stdout: JSON.stringify({ ok: true, data: { items: [...inboxItems] } }), stderr: "" };
+      }
+      if (cmd.includes("maintenance.publish")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: { status: "success", committed: false, pushed: true, message: "推送成功" },
+          }),
+          stderr: "",
+        };
+      }
+      return { stdout: "{}", stderr: "" };
+    };
+
+    let p3Dispatched = false;
+    const dispatchFn = async (cmd: string, placeholders: any) => {
+      if (placeholders.candidateId) {
+        p3Dispatched = true;
+      }
+      return { pid: 1, output: "", exited: true };
+    };
+    const sleepFn = async () => {
+      if (p3Dispatched) {
+        inboxItems = [];
+      }
+    };
+
+    const summary = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --target {{repo}}{{candidateId}}",
+        timeout: 5,
+        interval: 1,
+      },
+      { execFn: mockExec, dispatchFn, sleepFn }
+    )) as PipelineSummary;
+
+    assert.equal(summary.success, true);
+    assert.equal(summary.inboxCompleted, 1);
+    assert.equal(summary.inboxPushed, true);
+    assert.equal(summary.inboxPushMessage, "推送成功");
+
+    // 验证 publish 目标为从 allRepos 解析出的 /srv/repos/custom-knowledge-inbox
+    const publishCmd = executedCmds.find((c) => c.includes("maintenance.publish"));
+    assert.ok(publishCmd);
+    assert.ok(publishCmd.includes("/srv/repos/custom-knowledge-inbox"));
   });
 });
 

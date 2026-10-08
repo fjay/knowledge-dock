@@ -1096,12 +1096,14 @@
             "type": "string",
             "enum": [
               "code",
-              "system_knowledge"
+              "system_knowledge",
+              "inbox"
             ],
             "description": "Repository architecture type. Auto-detected if omitted.",
             "examples": [
               "code",
-              "system_knowledge"
+              "system_knowledge",
+              "inbox"
             ]
           },
           "branch": {

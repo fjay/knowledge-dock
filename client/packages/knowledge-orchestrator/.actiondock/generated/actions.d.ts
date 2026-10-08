@@ -108,6 +108,10 @@ export namespace Actions {
         /** Error message if processing failed, or null */
         error?: unknown;
       }>;
+      /** Whether the inbox repository was pushed to remote origin */
+      inboxPushed?: boolean;
+      /** Result message from pushing the inbox repository */
+      inboxPushMessage?: unknown;
     };
   }
 }

@@ -30,7 +30,8 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   }
 
   const repoName = await getRepoIdentifier(git, resolvedPath);
-  const repoType = input.repoType ?? (await detectRepoType(git, input.branch === "docs" ? "docs" : undefined));
+  const isInboxPath = resolvedPath.endsWith("knowledge-inbox") || resolvedPath.includes("inbox") || repoName.includes("inbox");
+  const repoType = input.repoType ?? (isInboxPath ? "inbox" : await detectRepoType(git, input.branch === "docs" ? "docs" : undefined));
 
   // Determine target branch
   let targetBranch = input.branch;
@@ -44,14 +45,66 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       } else {
         targetBranch = "master";
       }
+    } else if (repoType === "inbox") {
+      const branches = await git.listBranchNames();
+      if (branches.includes("main") || branches.includes("origin/main")) {
+        targetBranch = "main";
+      } else if (branches.includes("master") || branches.includes("origin/master")) {
+        targetBranch = "master";
+      } else {
+        targetBranch = "main";
+      }
     } else {
       targetBranch = "docs";
     }
   }
 
+  const shouldPush = input.push ?? true;
+
   // Check porcelain status to see if there are changes
   const porcelain = await git.getPorcelainStatus();
   if (porcelain.length === 0) {
+    // Check if targetBranch has unpushed commits compared to origin
+    let hasUnpushedCommits = false;
+    const remoteRefExists = await git.refExists(`origin/${targetBranch}`);
+    if (remoteRefExists) {
+      const revListRes = await git.run(["rev-list", `origin/${targetBranch}..${targetBranch}`]);
+      if (revListRes.code === 0 && revListRes.stdout.trim().length > 0) {
+        hasUnpushedCommits = true;
+      }
+    } else {
+      const localBranchExists = await git.refExists(targetBranch);
+      if (localBranchExists) {
+        hasUnpushedCommits = true;
+      }
+    }
+
+    if (hasUnpushedCommits && shouldPush) {
+      ctx.log.info(`Clean working tree but detected unpushed commits on '${targetBranch}'. Pushing to origin...`);
+      const pushRes = await git.run(["push", "origin", targetBranch]);
+      if (pushRes.code !== 0) {
+        return {
+          status: "error",
+          path: resolvedPath,
+          repo: repoName,
+          branch: targetBranch,
+          committed: false,
+          pushed: false,
+          message: `Failed to push unpushed commits to origin/${targetBranch}: ${pushRes.stderr.trim() || pushRes.stdout.trim()}`,
+        };
+      }
+      ctx.log.info(`Successfully pushed unpushed commits on '${targetBranch}' to origin`);
+      return {
+        status: "success",
+        path: resolvedPath,
+        repo: repoName,
+        branch: targetBranch,
+        committed: false,
+        pushed: true,
+        message: `Successfully pushed unpushed commits on '${targetBranch}' to origin/${targetBranch}`,
+      };
+    }
+
     ctx.log.info(`Working tree is clean for ${repoName}; no changes to publish`);
     return {
       status: "no_changes",
@@ -183,7 +236,6 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   ctx.log.info(`Successfully created commit ${currentCommit}`);
 
   // Push to remote origin
-  const shouldPush = input.push ?? true;
   let pushed = false;
   if (shouldPush) {
     ctx.log.info(`Pushing branch '${targetBranch}' to remote origin...`);

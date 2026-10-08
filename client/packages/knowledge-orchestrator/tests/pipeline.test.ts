@@ -404,6 +404,9 @@ describe("orchestrator.pipeline", () => {
         handle.emitExit({ code: 0, signal: null });
         // 第一次查询返回候选，后续轮询探测时移出
         inboxItems = [];
+      } else if (cmd.includes("maintenance.publish")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { status: "success", committed: false, pushed: true, message: "待审池推送成功" } }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
       } else {
         dispatchedCommands.push(cmd);
         handle.emitExit({ code: 0, signal: null });
@@ -431,6 +434,7 @@ describe("orchestrator.pipeline", () => {
     assert.equal(result.inboxCompleted, 1);
     assert.equal(result.inboxFailed, 0);
     assert.equal(result.inboxSkipped, false);
+    assert.equal(result.inboxPushed, true);
     assert.equal(result.inboxResults.length, 1);
     assert.equal(result.inboxResults[0].id, "20260924-kb1");
     assert.equal(result.inboxResults[0].status, "completed");
@@ -533,6 +537,9 @@ describe("orchestrator.pipeline", () => {
         if (dispatchedCommands.length > 0) {
           inboxItems = [];
         }
+      } else if (cmd.includes("maintenance.publish")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { status: "success", committed: false, pushed: true, message: "待审池推送成功" } }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
       } else {
         dispatchedCommands.push(cmd);
         handle.emitExit({ code: 0, signal: null });

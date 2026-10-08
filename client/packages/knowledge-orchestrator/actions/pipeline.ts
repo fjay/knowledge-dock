@@ -232,5 +232,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     inboxFailed: rawResult.inboxFailed ?? 0,
     inboxSkipped: rawResult.inboxSkipped ?? skipInbox,
     inboxResults,
+    ...(rawResult.inboxPushed !== undefined ? { inboxPushed: rawResult.inboxPushed } : {}),
+    ...(rawResult.inboxPushMessage !== undefined && rawResult.inboxPushMessage !== null ? { inboxPushMessage: rawResult.inboxPushMessage } : {}),
   };
 });
