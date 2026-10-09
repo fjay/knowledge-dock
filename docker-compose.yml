@@ -5,6 +5,7 @@ services:
       dockerfile: server/Dockerfile
       args:
         APT_MIRROR: ${APT_MIRROR:-deb.debian.org}
+        WITH_CHROMIUM: ${WITH_CHROMIUM:-false}
     image: knowledge-server:latest
     container_name: knowledge-server
     restart: unless-stopped

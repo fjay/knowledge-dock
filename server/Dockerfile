@@ -8,6 +8,8 @@ LABEL description="ActionDock Knowledge Server (Read, Append, Privileged Mainten
 
 # 构建参数：支持自定义 APT 镜像源（内网/隔离环境可传入内部镜像地址，例如 mirrors.tuna.tsinghua.edu.cn）
 ARG APT_MIRROR=deb.debian.org
+# 构建参数：是否内置 Chromium 无头浏览器（browse/渲染类扩展包需要时置为 true，体积约增 600MB）
+ARG WITH_CHROMIUM=false
 
 # 安装必要的系统底层工具：git (带 partial clone 支持), ripgrep (search.rg 引擎), ssh, ca-certificates
 RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources && \
@@ -19,6 +21,17 @@ RUN sed -i "s|deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sou
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+# 可选层：内置 Chromium 无头浏览器与中文/日文/韩文字体（--no-install-recommends 已裁剪
+# 桌面推荐包；systemd/dbus 等拉入组件是 chromium 对 systemd-sysv 的硬依赖，无法剔除）。
+# 构建期执行一次无头自检，浏览器不可用则构建失败而非运行时才暴露
+RUN if [ "${WITH_CHROMIUM}" = "true" ]; then \
+        apt-get update && \
+        apt-get install -y --no-install-recommends chromium fonts-noto-cjk && \
+        rm -rf /var/lib/apt/lists/* && \
+        chromium --headless --no-sandbox --disable-gpu --dump-dom 'data:text/html,<h1>ok</h1>' >/dev/null && \
+        chromium --version; \
+    fi
+
 # 配置 Git 全局安全目录与维护者基础身份，防止挂载卷在多用户/容器内外引发 dubious ownership 拦截
 RUN git config --global --add safe.directory '*' && \
     git config --global user.name "Knowledge Maintainer" && \
@@ -26,7 +39,7 @@ RUN git config --global --add safe.directory '*' && \
 
 # 内网 npm 源使用自签证书，需关闭 TLS 校验才能拉取
 RUN npm config set strict-ssl false && \
-    npm install -g @actiondock/cli@2.9.0 && \
+    npm install -g @actiondock/cli@2.13.0 && \
     npm cache clean --force
 
 # 创建 Monorepo 应用目录并拷贝 package.json 与 packages

@@ -28,7 +28,7 @@
   APT_MIRROR=deb.debian.org
   ```
 
-若处于内网或隔离网络环境，构建镜像时可通过 `APT_MIRROR` 指定内部 Debian 镜像源（如 `mirrors.tuna.tsinghua.edu.cn`），构建参数会自动替换软件源地址；对于离线封闭环境，建议直接基于已完成换源的基础镜像构建。
+若处于内网或隔离网络环境，构建镜像时可通过 `APT_MIRROR` 指定内部 Debian 镜像源（如 `mirrors.tuna.tsinghua.edu.cn`），构建参数会自动替换软件源地址；对于离线封闭环境，建议直接基于已完成换源的基础镜像构建。需要浏览器能力的扩展包（网页抓取、截图、渲染）时，在 `.env` 中设置 `WITH_CHROMIUM=true` 重新构建镜像，内置 Debian 官方 Chromium 与中文字体（体积约增 600MB）；启动日志会输出 `[INFO] Chromium available at ...`，扩展包通过 `CHROME_PATH` 环境变量定位可执行文件，无头调用需携带 `--no-sandbox --disable-gpu` 参数。
 
 `ACTIONDOCK_TOKEN` 允许检索和向待审池追加候选；`ACTIONDOCK_AGENT_TOKEN` 允许编辑、终端执行和仓库维护。不要将维护令牌交给外部查询用户。
 

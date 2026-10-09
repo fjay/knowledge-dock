@@ -34,6 +34,12 @@ if [ -d "/app/server/packages" ]; then
     ad link /app/server/packages/knowledge-maintenance >/dev/null 2>&1 || echo "[WARN] ad link knowledge-maintenance failed, falling back to build-time registry" >&2
 fi
 
+# 若镜像内置了 Chromium（WITH_CHROMIUM=true 构建），导出可执行路径供浏览器类扩展包消费
+if command -v chromium >/dev/null 2>&1; then
+    export CHROME_PATH="$(command -v chromium)"
+    echo "[INFO] Chromium available at ${CHROME_PATH}"
+fi
+
 # 扫描扩展包目录（支持多级嵌套，目录深度上限 EXTENSIONS_MAX_DEPTH，默认 4）：
 # 每个含 actiondock.json 的目录自动安装生产依赖并 ad link；node_modules 与 .git
 # 内部不扫描。无 dependencies 的源码型包跳过 npm install，避免隔离网络下无谓的
