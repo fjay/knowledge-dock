@@ -8,6 +8,8 @@ LABEL description="ActionDock Knowledge Server (Read, Append, Privileged Mainten
 
 # 构建参数：支持自定义 APT 镜像源（内网/隔离环境可传入内部镜像地址，例如 mirrors.tuna.tsinghua.edu.cn）
 ARG APT_MIRROR=deb.debian.org
+# 构建参数：ActionDock CLI 版本（默认 latest 跟随最新发布；需复现构建或排查问题时可显式钉住，如 2.13.0）
+ARG ACTIONDOCK_CLI_VERSION=latest
 # 构建参数：是否内置 Chromium 无头浏览器（browse/渲染类扩展包需要时置为 true，体积约增 600MB）
 ARG WITH_CHROMIUM=false
 
@@ -39,7 +41,7 @@ RUN git config --global --add safe.directory '*' && \
 
 # 内网 npm 源使用自签证书，需关闭 TLS 校验才能拉取
 RUN npm config set strict-ssl false && \
-    npm install -g @actiondock/cli@2.13.0 && \
+    npm install -g @actiondock/cli@${ACTIONDOCK_CLI_VERSION} && \
     npm cache clean --force
 
 # 创建 Monorepo 应用目录并拷贝 package.json 与 packages

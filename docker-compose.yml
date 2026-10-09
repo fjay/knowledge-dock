@@ -6,6 +6,7 @@ services:
       args:
         APT_MIRROR: ${APT_MIRROR:-deb.debian.org}
         WITH_CHROMIUM: ${WITH_CHROMIUM:-false}
+        ACTIONDOCK_CLI_VERSION: ${ACTIONDOCK_CLI_VERSION:-latest}
     image: knowledge-server:latest
     container_name: knowledge-server
     restart: unless-stopped
