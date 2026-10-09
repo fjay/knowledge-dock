@@ -87,48 +87,19 @@ else
     echo "[INFO] No custom certificates provided, ad serve will auto-generate self-signed TLS certificates"
 fi
 
-# 动态构建包含 sk 视图与 skm 视图的 JSON 配置字符串 (基于原生 ActionDock 虚拟视图)
-VIEWS_JSON=$(node -e '
-const crypto = require("node:crypto");
-const views = {
-  default: {
-    token: crypto.randomBytes(32).toString("hex")
-  },
-  sk: {
-    token: process.env.ACTIONDOCK_TOKEN,
-    packageAllowlist: ["workspace", "knowledge"],
-    actionAllowlist: (process.env.SK_ACTION_ALLOWLIST
-      ? process.env.SK_ACTION_ALLOWLIST.split(",").map(s => s.trim()).filter(Boolean)
-      : [
-          "workspace/search.rg",
-          "workspace/files.read",
-          "workspace/files.list",
-          "knowledge/knowledge.collect",
-          "knowledge/knowledge.get",
-          "knowledge/knowledge.query",
-          "knowledge/knowledge.leaderboard",
-          "search.rg",
-          "files.read",
-          "files.list",
-          "knowledge.collect",
-          "knowledge.get",
-          "knowledge.query",
-          "knowledge.leaderboard"
-        ]
-    )
-  },
-  skm: {
-    token: process.env.ACTIONDOCK_AGENT_TOKEN,
-    packageAllowlist: ["workspace", "knowledge", "maintenance"]
-  }
-};
-console.log(JSON.stringify(views));
-')
-
-# 视图令牌经临时文件传递，避免 argv 泄露给容器内其他进程
+# 动态构建视图权限配置：优先读取挂载到 /etc/actiondock/views.json 的原生
+# ActionDock views 配置（支持裸对象、{"views":{}}、{"server":{"views":{}}} 三种形态），
+# 未提供时按内置默认生成。解析与安全校验由 views-bootstrap.cjs 独立承担。
 VIEWS_FILE="/run/actiondock-views.json"
-printf '%s' "${VIEWS_JSON}" > "${VIEWS_FILE}"
-chmod 600 "${VIEWS_FILE}"
+MOUNTED_VIEWS="${MOUNTED_VIEWS:-/etc/actiondock/views.json}"
+if [ -f "${MOUNTED_VIEWS}" ]; then
+    echo "[INFO] Using mounted views config from ${MOUNTED_VIEWS}"
+fi
+node /app/server/views-bootstrap.cjs
+
+# 阻断 serve 端对 ACTIONDOCK_TOKEN 的回落解析：该环境变量只允许作为 sk 视图令牌
+# 的注入来源，不得成为 default 视图令牌而获得全量权限
+unset ACTIONDOCK_TOKEN
 
 exec ad serve --host 0.0.0.0 --port "${PORT:-443}" --https ${TLS_FLAGS} --views-file "${VIEWS_FILE}"
 

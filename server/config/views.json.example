@@ -1,0 +1,40 @@
+{
+  "$comment": "可选的视图权限扩展配置。本文件复制为 views.json 后随 server/config/ 挂载到容器 /etc/actiondock/ 生效。格式与 ad serve --views-file 完全一致（也可写作裸对象或 {\"server\":{\"views\":{}}} 形态）。未提供时使用镜像内置的 sk/skm/default 默认视图。",
+  "views": {
+    "default": {
+      "$comment": "default 视图不配置 token 时自动注入随机令牌，等效于关闭"
+    },
+    "sk": {
+      "$comment": "查询视图：token 支持 ${ENV_VAR} 环境变量引用，令牌不落盘；allowlist 为整体替换语义，需完整列出",
+      "token": "${ACTIONDOCK_TOKEN}",
+      "packageAllowlist": ["workspace", "knowledge"],
+      "actionAllowlist": [
+        "workspace/search.rg",
+        "workspace/files.read",
+        "workspace/files.list",
+        "knowledge/knowledge.collect",
+        "knowledge/knowledge.get",
+        "knowledge/knowledge.query",
+        "knowledge/knowledge.leaderboard",
+        "search.rg",
+        "files.read",
+        "files.list",
+        "knowledge.collect",
+        "knowledge.get",
+        "knowledge.query",
+        "knowledge.leaderboard"
+      ]
+    },
+    "skm": {
+      "$comment": "维护视图：授予全部内置包；新增扩展包时在此追加 packageId",
+      "token": "${ACTIONDOCK_AGENT_TOKEN}",
+      "packageAllowlist": ["workspace", "knowledge", "maintenance"]
+    },
+    "ops": {
+      "$comment": "示例扩展视图：新增独立权限面时复制此段，令牌通过 .env 注入新环境变量；不需要时删除本段",
+      "token": "${OPS_TOKEN}",
+      "packageAllowlist": ["maintenance"],
+      "actionAllowlist": ["maintenance/maintenance.list", "maintenance/maintenance.sync"]
+    }
+  }
+}

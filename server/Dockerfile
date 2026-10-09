@@ -58,8 +58,9 @@ ENV NODE_ENV=production \
 # 暴露原生 HTTPS 端口 (443 单端口多视图服务)
 EXPOSE 443
 
-# 拷贝容器启动入口
+# 拷贝容器启动入口与视图权限解析器
 COPY server/entrypoint.sh /entrypoint.sh
+COPY server/views-bootstrap.cjs /app/server/views-bootstrap.cjs
 RUN chmod +x /entrypoint.sh
 
 WORKDIR /srv
