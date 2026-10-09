@@ -11,15 +11,19 @@ import {
   detectRepoType,
 } from "../src/repo-utils.ts";
 import { MaintenanceError } from "../src/errors.ts";
+import { DEFAULT_GIT_CLONE_TIMEOUT_MS } from "../src/limits.ts";
 
 export type Input = ActionInput<"maintenance.list">;
 export type Output = ActionOutput<"maintenance.list">;
 
 interface RepoScanConfig {
   path: string;
+  url?: string | undefined;
   repoType?: "code" | "system_knowledge" | "inbox" | undefined;
   branch?: string | undefined;
   sourceBranch?: string | undefined;
+  filterBlobNone?: boolean | undefined;
+  cloneTimeoutMs?: number | undefined;
 }
 
 type SingleRepoScanResult = {
@@ -54,6 +58,67 @@ type SingleRepoScanResult = {
   };
   message: string;
 };
+
+/**
+ * 预热克隆：路径不存在且配置了 url 时先克隆到目标路径，存在或未配 url 则跳过。
+ * 失败时抛出 MaintenanceError，由调用方按仓聚合为 error 结果，不中断批量扫描。
+ */
+async function ensureClonedIfNeeded(
+  repoInput: RepoScanConfig,
+  ctx: ActionContext
+): Promise<void> {
+  const resolvedPath = resolveRepoPath(repoInput.path, { allowNonExistent: true });
+  if (fs.existsSync(resolvedPath)) {
+    return;
+  }
+  if (!repoInput.url) {
+    throw new MaintenanceError(
+      `Path does not exist and no remote url provided for clone: ${resolvedPath}`,
+      "PATH_NOT_FOUND",
+      404
+    );
+  }
+
+  ctx.log.info("Target repository does not exist locally; cloning before scan", {
+    path: resolvedPath,
+    url: repoInput.url,
+  });
+
+  const cloneTimeoutMs =
+    repoInput.cloneTimeoutMs ?? ctx.config.get<number>("GIT_CLONE_TIMEOUT_MS", DEFAULT_GIT_CLONE_TIMEOUT_MS);
+  const maxOutputBytes = ctx.config.get<number>("GIT_MAX_OUTPUT_BYTES", 4 * 1024 * 1024);
+  const useBlobless = repoInput.filterBlobNone ?? ctx.config.get<boolean>("GIT_BLOBLESS_FETCH", true);
+
+  const cloneRes = await GitClient.clone(ctx, repoInput.url, resolvedPath, {
+    filterBlobNone: useBlobless,
+    ...(repoInput.sourceBranch ? { branch: repoInput.sourceBranch } : {}),
+    timeoutMs: cloneTimeoutMs,
+    maxOutputBytes,
+  });
+  if (cloneRes.code !== 0) {
+    const errorMsg = cloneRes.stderr.trim() || cloneRes.stdout.trim() || "git clone failed";
+    throw new MaintenanceError(
+      `Failed to clone repository from ${repoInput.url}: ${errorMsg}`,
+      "CLONE_FAILED",
+      500
+    );
+  }
+
+  // 克隆时仅带出单分支，若目标分支不在其中则补拉全部分支引用，保证后续扫描可用
+  const git = new GitClient(ctx, resolvedPath, ctx.config.get<number>("GIT_TIMEOUT_MS", 30000), maxOutputBytes);
+  const targetBranch = repoInput.branch ?? repoInput.sourceBranch;
+  if (targetBranch) {
+    const localExists = await git.refExists(`refs/heads/${targetBranch}`);
+    const originExists = await git.refExists(`origin/${targetBranch}`);
+    if (!localExists && !originExists) {
+      ctx.log.warn("Cloned repository lacks configured branch; fetching all refs", {
+        path: resolvedPath,
+        branch: targetBranch,
+      });
+      await git.fetchOrigin();
+    }
+  }
+}
 
 /**
  * Scans a single repository for pending commits since checkpoint.
@@ -297,9 +362,12 @@ export default defineAction<Input, Output>(async (input, ctx) => {
         } else if (item && typeof item.path === "string" && item.path.trim()) {
           reposToScan.push({
             path: item.path.trim(),
+            ...(item.url && typeof item.url === "string" ? { url: item.url.trim() } : {}),
             ...(item.repoType ? { repoType: item.repoType } : {}),
             ...(item.branch ? { branch: item.branch } : {}),
             ...(item.sourceBranch ? { branch: item.sourceBranch } : {}),
+            ...(item.filterBlobNone !== undefined ? { filterBlobNone: item.filterBlobNone } : {}),
+            ...(typeof item.cloneTimeoutMs === "number" ? { cloneTimeoutMs: item.cloneTimeoutMs } : {}),
           });
         }
       }
@@ -340,15 +408,26 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     }
 
     ctx.log.info("Batch scanning repository", { path: repoConfig.path });
-    const singleResult = await scanSingleRepo(
-      {
+    let singleResult: SingleRepoScanResult;
+    try {
+      await ensureClonedIfNeeded(repoConfig, ctx);
+      singleResult = await scanSingleRepo(
+        {
+          path: repoConfig.path,
+          repoType: repoConfig.repoType,
+          branch: repoConfig.branch ?? input.branch,
+        },
+        ctx,
+        false
+      );
+    } catch (err: any) {
+      singleResult = {
+        status: "error",
         path: repoConfig.path,
-        repoType: repoConfig.repoType,
-        branch: repoConfig.branch ?? input.branch,
-      },
-      ctx,
-      false
-    );
+        hasChanges: false,
+        message: err.message || String(err),
+      };
+    }
 
     results.push(singleResult);
 

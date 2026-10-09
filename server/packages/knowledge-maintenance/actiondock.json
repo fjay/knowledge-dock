@@ -427,7 +427,7 @@
           },
           "config": {
             "type": "string",
-            "description": "Path to repository configuration JSON file (defaults to /etc/actiondock/repos.json if omitted)",
+            "description": "Path to repository configuration JSON file (defaults to /etc/actiondock/repos.json if omitted). In batch mode, repositories configured with a url but missing locally are cloned automatically before scanning.",
             "examples": [
               "/etc/actiondock/repos.json",
               "/srv/workspace/config/repos.json"

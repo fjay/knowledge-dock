@@ -309,9 +309,12 @@ describe("orchestrator.pipeline", () => {
     }
   });
 
-  it("服务端物理隔离校验：entrypoint.sh 仅链接三大核心服务包，绝不链接 orchestrator 包", () => {
-    const entrypointPath = path.resolve(__dirname, "../../../../server/entrypoint.sh");
+  it("服务端物理隔离校验：entrypoint 启动链仅链接三大核心服务包，视图隔离由 views-bootstrap.cjs 承担", () => {
+    const serverRoot = path.resolve(__dirname, "../../../../server");
+    const entrypointPath = path.join(serverRoot, "entrypoint.sh");
+    const bootstrapPath = path.join(serverRoot, "views-bootstrap.cjs");
     assert.ok(fs.existsSync(entrypointPath), "entrypoint.sh 必须存在");
+    assert.ok(fs.existsSync(bootstrapPath), "views-bootstrap.cjs 必须存在");
 
     const content = fs.readFileSync(entrypointPath, "utf8");
 
@@ -321,15 +324,18 @@ describe("orchestrator.pipeline", () => {
     assert.ok(content.includes("ad link /app/server/packages/knowledge-maintenance"));
     assert.ok(!content.includes("knowledge-orchestrator"), "entrypoint.sh 严禁链接 knowledge-orchestrator");
 
-    // 提取 skm 视图配置代码块
-    const skmMatch = content.match(/skm:\s*\{[\s\S]*?\n\s*\}/);
-    assert.ok(skmMatch, "必须在 entrypoint.sh 中配置 skm 视图");
-    const skmConfig = skmMatch[0];
+    // 验证 entrypoint 启动 ad serve 时挂载 views-bootstrap 生成的视图配置
+    assert.ok(content.includes("node /app/server/views-bootstrap.cjs"), "entrypoint.sh 必须先执行 views-bootstrap.cjs");
+    assert.ok(content.includes("--views-file"), "ad serve 必须挂载生成的视图配置文件");
 
-    // skm 视图仅开放 workspace, knowledge, maintenance
-    assert.ok(skmConfig.includes('"workspace"'));
-    assert.ok(skmConfig.includes('"knowledge"'));
-    assert.ok(skmConfig.includes('"maintenance"'));
+    // 视图隔离断言迁至 views-bootstrap.cjs：skm 视图仅开放 workspace, knowledge, maintenance
+    const bootstrap = fs.readFileSync(bootstrapPath, "utf8");
+    const skmMatch = bootstrap.match(/views\.skm\s*=\s*\{[\s\S]*?\};/);
+    assert.ok(skmMatch, "views-bootstrap.cjs 必须配置 skm 视图");
+    const skmConfig = skmMatch[0];
+    assert.ok(skmConfig.includes('"workspace"'), "skm 视图必须开放 workspace");
+    assert.ok(skmConfig.includes('"knowledge"'), "skm 视图必须开放 knowledge");
+    assert.ok(skmConfig.includes('"maintenance"'), "skm 视图必须开放 maintenance");
     assert.ok(!skmConfig.includes("orchestrator"), "skm 视图绝不包含 orchestrator");
   });
 

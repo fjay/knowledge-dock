@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createTestRuntime, createTestPlatform, FakeProcessDriver } from "@actiondock/testing";
+import { spawnSync } from "node:child_process";
+import { createTestRuntime, createTestPlatform, FakeProcessDriver, MockProcessExecutor } from "@actiondock/testing";
 import { encodeStateKey } from "@actiondock/sdk";
 import listAction from "../actions/maintenance-list.ts";
 
@@ -482,6 +483,150 @@ describe("maintenance.list", () => {
       assert.equal(res.results?.[1]?.status, "error");
       assert.equal(res.results?.[1]?.hasChanges, false);
       assert.ok(res.message.includes("1 error(s)"));
+    } finally {
+      fs.rmSync(tmpBase, { recursive: true, force: true });
+    }
+  });
+
+  it("batch scan clones repository from url when target path does not exist locally", async () => {
+    // 真实 git 驱动验证：FakeProcessDriver 不落盘，克隆后路径仍不存在会污染后续扫描
+    const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), "list-batch-clone-"));
+    const remoteDir = path.join(tmpBase, "remotes", "new-repo.git");
+    const repoExisting = path.join(tmpBase, "existing-repo");
+    const repoMissing = path.join(tmpBase, "missing-repo");
+    const configFile = path.join(tmpBase, "repos.json");
+
+    // 构造真实裸仓作为克隆远端（release 分支 + 单个提交）
+    fs.mkdirSync(remoteDir, { recursive: true });
+    const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+    for (const args of [
+      ["init", "--bare", "-q"],
+    ] as const) {
+      const res = spawnSync("git", [...args], { cwd: remoteDir, env: gitEnv });
+      assert.equal(res.status, 0, `git ${args.join(" ")} failed: ${res.stderr}`);
+    }
+    const seedDir = path.join(tmpBase, "seed");
+    fs.mkdirSync(seedDir, { recursive: true });
+    const seedSteps: string[][] = [
+      ["init", "-q", "--initial-branch=release"],
+      ["config", "user.email", "test@test.com"],
+      ["config", "user.name", "test"],
+      ["add", "-A"],
+      ["commit", "-qm", "init"],
+      ["push", "-q", remoteDir, "release"],
+    ];
+    fs.writeFileSync(path.join(seedDir, "README.md"), "seed\n");
+    for (const args of seedSteps) {
+      const res = spawnSync("git", args, { cwd: seedDir, env: gitEnv });
+      assert.equal(res.status, 0, `git ${args.join(" ")} failed: ${res.stderr}`);
+    }
+
+    // 已存在仓库：本地初始化 release 分支并写入检查点，验证其不被重新克隆
+    fs.mkdirSync(repoExisting, { recursive: true });
+    fs.writeFileSync(path.join(repoExisting, "README.md"), "existing\n");
+    for (const args of [
+      ["init", "-q", "--initial-branch=release"],
+      ["config", "user.email", "test@test.com"],
+      ["config", "user.name", "test"],
+      ["add", "-A"],
+      ["commit", "-qm", "init"],
+    ] as const) {
+      const res = spawnSync("git", [...args], { cwd: repoExisting, env: gitEnv });
+      assert.equal(res.status, 0, `git ${args.join(" ")} failed: ${res.stderr}`);
+    }
+    const existingHead = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: repoExisting,
+      env: gitEnv,
+    });
+    assert.equal(existingHead.status, 0);
+    const existingCommit = existingHead.stdout.toString().trim();
+
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify([
+        { path: repoExisting, repoType: "code", sourceBranch: "release" },
+        { path: repoMissing, url: remoteDir, repoType: "code", sourceBranch: "release" },
+      ])
+    );
+
+    const prevWorkspaceRoot = process.env.WORKSPACE_ROOT;
+    process.env.WORKSPACE_ROOT = tmpBase;
+
+    try {
+      const executor = new MockProcessExecutor({ fallbackToReal: true });
+      const runtime = createTestRuntime({ platform: createTestPlatform({ process: executor }) });
+
+      await runtime.state.set(encodeStateKey("checkpoints", "existing-repo"), {
+        commit: existingCommit,
+      });
+
+      const res = await runtime.run(listAction, {
+        config: configFile,
+      });
+
+      // 不存在的仓库被真实克隆到目标路径
+      assert.ok(fs.existsSync(path.join(repoMissing, ".git")), "Missing repository must be cloned to target path");
+
+      assert.equal(res.batch, true);
+      assert.equal(res.summary?.total, 2);
+      // 已存在仓检查点对齐 -> upToDate；新克隆仓无检查点 -> initial 全量盘点
+      assert.equal(res.summary?.upToDateCount, 1, `summary: ${JSON.stringify(res.summary)}`);
+      assert.equal(res.summary?.initialCount, 1);
+      assert.equal(res.summary?.errorCount, 0);
+      const cloned = res.results?.find((r: any) => r.path === repoMissing);
+      assert.equal(cloned?.status, "initial");
+      assert.equal(cloned?.initialInventoryRequired, true);
+      const clonedHead = spawnSync("git", ["rev-parse", "origin/release"], {
+        cwd: repoMissing,
+        env: gitEnv,
+      });
+      assert.equal(clonedHead.status, 0);
+      assert.equal(cloned?.to, clonedHead.stdout.toString().trim());
+    } finally {
+      if (prevWorkspaceRoot !== undefined) {
+        process.env.WORKSPACE_ROOT = prevWorkspaceRoot;
+      } else {
+        delete process.env.WORKSPACE_ROOT;
+      }
+      fs.rmSync(tmpBase, { recursive: true, force: true });
+    }
+  });
+
+  it("batch scan reports error when repository path is missing and no url is configured", async () => {
+    const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), "list-batch-nourl-"));
+    const configFile = path.join(tmpBase, "repos.json");
+    const repoGhost = path.join(tmpBase, "ghost-repo");
+
+    fs.writeFileSync(
+      configFile,
+      JSON.stringify([{ path: repoGhost, repoType: "code", sourceBranch: "release" }])
+    );
+
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      fakeDriver.onSpawn = (handle: any, _spec: any) => {
+        handle.emitExit({ code: 0, signal: null });
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(listAction, {
+        config: configFile,
+      });
+
+      assert.equal(res.batch, true);
+      assert.equal(res.summary?.total, 1);
+      assert.equal(res.summary?.errorCount, 1);
+      const failed = res.results?.[0];
+      assert.equal(failed?.status, "error");
+      assert.equal(failed?.hasChanges, false);
+      assert.ok(
+        (failed?.message || "").includes("no remote url provided for clone"),
+        `Error message must explain missing url, got: ${failed?.message}`
+      );
     } finally {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     }
