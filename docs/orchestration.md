@@ -60,6 +60,8 @@ ad run orchestrator.pipeline -- \
 | `reportFile` | `maintenance-report.md` | 本地 Markdown 结算报告路径 |
 | `logFile` | 未指定 | 本地追加日志路径 |
 
+环境变量 `COMMAND_TIMEOUT_MS` 控制流水线内单条远端查询 shell 命令（扫描、同步、检查点轮询）的超时，默认 600000（10 分钟）。首轮批量扫描含自动克隆时耗时较长，必要时可调大；不建议低于 60000。
+
 例如，只预演某个仓库：
 
 ```bash

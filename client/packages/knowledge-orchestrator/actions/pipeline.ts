@@ -24,6 +24,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   const skipInbox = input.skipInbox ?? false;
   const reportFile = input.reportFile ?? "maintenance-report.md";
   const logFile = input.logFile ?? null;
+  const execTimeoutMs = ctx.config.get<number>("COMMAND_TIMEOUT_MS", 600000);
 
   ctx.log.info("Starting orchestrator.pipeline", {
     profile,
@@ -36,6 +37,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     syncSystemKnowledge,
     skipInbox,
     logFile,
+    execTimeoutMs,
   });
 
   if (!dryRun && !dispatchCmd) {
@@ -59,7 +61,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
             args: ["-c", cmd],
             io: { mode: "pipe" },
           },
-          timeoutMs: 60000,
+          timeoutMs: execTimeoutMs,
           maxOutputBytes: 10 * 1024 * 1024,
         },
         { signal: ctx.signal }

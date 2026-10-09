@@ -5,6 +5,13 @@
   "name": "Knowledge Orchestrator",
   "version": "0.1.0",
   "description": "Local client orchestration package for multi-repository knowledge maintenance",
+  "config": {
+    "COMMAND_TIMEOUT_MS": {
+      "type": "integer",
+      "description": "Timeout in milliseconds for each remote query shell command executed by the pipeline (scan, sync, checkpoint polling). Default: 600000 (10 minutes); first-round batch scanning with automatic cloning may need a larger value",
+      "env": "COMMAND_TIMEOUT_MS"
+    }
+  },
   "actions": {
     "orchestrator.pipeline": {
       "entry": "actions/pipeline.ts",

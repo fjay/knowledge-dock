@@ -93,6 +93,65 @@ describe("orchestrator.pipeline", () => {
     assert.ok(result.report.includes("流水线执行报告"));
   });
 
+  it("COMMAND_TIMEOUT_MS 配置生效：远端查询命令超时从默认 60s 提升并可经配置覆盖", async () => {
+    const fakeDriver = new FakeProcessDriver();
+    const execTimeouts: { cmd: string; timeoutMs?: number }[] = [];
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "clean-service",
+          path: "/srv/workspace/clean-service",
+          branch: "release",
+          status: "upToDate",
+          hasChanges: false,
+          from: "0000000",
+          to: "0000000",
+        },
+      ],
+    };
+
+    fakeDriver.onSpawn = (handle: any, spec: any) => {
+      const cmd = spec.args[1] || spec.args.join(" ");
+      if (cmd.includes("maintenance.list")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: mockScanData }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
+      } else {
+        handle.emitExit({ code: 0, signal: null });
+      }
+      handle.emitOutputClosed("natural");
+    };
+
+    const platform = createTestPlatform({ processDriver: fakeDriver });
+    const origExecute = (platform.process as any).processManager.runExecutor.execute.bind(
+      (platform.process as any).processManager.runExecutor
+    );
+    (platform.process as any).processManager.runExecutor.execute = async (input: any, call: any) => {
+      const cmd = input.spec.args?.join(" ") ?? "";
+      if (cmd.includes("sh") || cmd.includes("maintenance.list")) {
+        execTimeouts.push({ cmd, timeoutMs: input.timeoutMs });
+      }
+      return origExecute(input, call);
+    };
+
+    const runtime = createTestRuntime({ platform });
+    runtime.config.set("COMMAND_TIMEOUT_MS", 900000);
+
+    const result = await runtime.run(pipelineAction, {
+      profile: "skm",
+      dryRun: true,
+      dispatchCmd: 'ad run my-agent.dispatch --profile skm -- repo="{{repo}}"',
+    });
+
+    assert.equal(result.success, true);
+    // 所有远端查询 shell 命令均使用配置值，而非旧的硬编码 60000
+    assert.ok(execTimeouts.length > 0, "必须至少捕获一条查询命令");
+    for (const t of execTimeouts) {
+      assert.equal(t.timeoutMs, 900000, `命令 ${t.cmd} 应使用配置超时 900000ms，实际 ${t.timeoutMs}ms`);
+    }
+  });
+
   it("两阶段执行与检查点推进闭环：单代码仓与系统知识仓均成功闭环", async () => {
     const fakeDriver = new FakeProcessDriver();
     const dispatchedCommands: string[] = [];
