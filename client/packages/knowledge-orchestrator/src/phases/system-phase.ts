@@ -141,7 +141,7 @@ export async function runSystemKnowledgePhase(
           profile,
           repoItem.path,
           syncedCommit,
-          "synced",
+          "no_change_needed",
           "前序代码仓无更新，仅同步系统知识库自身变动并对齐检查点",
           execFn
         );

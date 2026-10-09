@@ -83,7 +83,7 @@ export async function completeRemoteRepo(
   profile: string = "skm",
   repoPath: string,
   commit: string,
-  actionTaken: string = "synced",
+  actionTaken: string = "no_change_needed",
   summary: string = "同步系统知识库自身变更",
   execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
 ): Promise<any> {
