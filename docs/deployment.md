@@ -60,7 +60,7 @@
 
 解析失败（JSON 语法错误、令牌引用的环境变量未设置、令牌不足 32 字符、疑似占位符或跨视图重复、无任何携带令牌的视图）时容器启动即失败，不静默降级。`ACTIONDOCK_TOKEN` 环境变量在启动前被显式清除，仅作为 `sk` 视图令牌的注入来源，不会成为 `default` 视图的回落令牌。`SK_ACTION_ALLOWLIST` 环境变量仅在内置默认模式下生效，挂载配置后不再读取。
 
-加载额外 ActionDock 工具包：将包目录放入宿主机 `${KNOWLEDGE_DATA_DIR}/extensions/` 下（每个子目录需含 `actiondock.json`），容器启动时自动为含 `package.json` dependencies 且尚未安装的包执行 `npm install --omit=dev` 并 `ad link` 至全局路由；无依赖的源码型包跳过安装直接 link。依赖安装或 link 失败仅告警不阻断启动。新包默认仅对 `default` 视图（随机令牌，等效关闭）可见，必须在挂载的 `views.json` 对应视图 `packageAllowlist` 中追加包标识后，`sk` 或 `skm` 才能调用。
+加载额外 ActionDock 工具包：将包目录放入宿主机 `${KNOWLEDGE_DATA_DIR}/extensions/` 下（支持多级嵌套，目录深度上限由 `EXTENSIONS_MAX_DEPTH` 控制，默认 4；每个包目录需含 `actiondock.json`，`node_modules` 与 `.git` 内部不扫描），容器启动时自动为含 `package.json` dependencies 且尚未安装的包执行 `npm install --omit=dev` 并 `ad link` 至全局路由；无依赖的源码型包跳过安装直接 link。依赖安装或 link 失败仅告警不阻断启动。新包默认仅对 `default` 视图（随机令牌，等效关闭）可见，必须在挂载的 `views.json` 对应视图 `packageAllowlist` 中追加包标识后，`sk` 或 `skm` 才能调用。
 
 ## 仓库清单
 
