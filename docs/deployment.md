@@ -58,7 +58,9 @@
 
 扩展新视图或新权限面的做法：复制 `server/config/views.json.example` 为 `server/config/views.json`，按需修改。挂载配置是整体替换语义，同名视图覆盖内置默认，因此自定义 `sk` 时需完整列出允许的 action 清单。`token` 支持 `${ENV_VAR}` 环境变量引用，令牌不落盘；新增环境变量（如 `OPS_TOKEN`）在 `.env` 中声明并在 Compose `environment` 段透传。`$` 与 `__` 前缀的键视为注释，解析时剔除。
 
-解析失败（JSON 语法错误、令牌引用的环境变量未设置、令牌不足 32 字符、疑似占位符或跨视图重复、无任何携带令牌的视图）时容器启动即失败，不静默降级。`ACTIONDOCK_TOKEN` 环境变量在启动前被显式清除，仅作为 `sk` 视图令牌的注入来源，不会成为 `default` 视图的回落令牌。若需加载额外的 ActionDock 工具包，将包目录放入数据目录后自行 `ad link`，并在对应视图的 `packageAllowlist` 中追加包标识。`SK_ACTION_ALLOWLIST` 环境变量仅在内置默认模式下生效，挂载配置后不再读取。
+解析失败（JSON 语法错误、令牌引用的环境变量未设置、令牌不足 32 字符、疑似占位符或跨视图重复、无任何携带令牌的视图）时容器启动即失败，不静默降级。`ACTIONDOCK_TOKEN` 环境变量在启动前被显式清除，仅作为 `sk` 视图令牌的注入来源，不会成为 `default` 视图的回落令牌。`SK_ACTION_ALLOWLIST` 环境变量仅在内置默认模式下生效，挂载配置后不再读取。
+
+加载额外 ActionDock 工具包：将包目录放入宿主机 `${KNOWLEDGE_DATA_DIR}/extensions/` 下（每个子目录需含 `actiondock.json`），容器启动时自动为含 `package.json` dependencies 且尚未安装的包执行 `npm install --omit=dev` 并 `ad link` 至全局路由；无依赖的源码型包跳过安装直接 link。依赖安装或 link 失败仅告警不阻断启动。新包默认仅对 `default` 视图（随机令牌，等效关闭）可见，必须在挂载的 `views.json` 对应视图 `packageAllowlist` 中追加包标识后，`sk` 或 `skm` 才能调用。
 
 ## 仓库清单
 
@@ -96,6 +98,7 @@ Compose 从 `KNOWLEDGE_DATA_DIR` 挂载以下目录：
 | `certs/` | `/etc/actiondock/certs`，只读 | 可选的 `cert.pem` 与 `key.pem` |
 | `logs/` | `/var/log/actiondock` | 供运行环境使用的日志目录 |
 | `remotes/` | `/data/knowledge/remotes` | 本地演练用裸仓目录 |
+| `extensions/` | `/srv/extensions` | 额外 ActionDock 工具包（启动时自动安装依赖并链接） |
 
 若未提供证书，`ad serve` 会生成自签名证书。生产接入应提供受信任证书，并让客户端正常校验证书。SSH 密钥目录以只读方式挂载，防止容器修改宿主机密钥文件；运行进程仍可读取该密钥，因此维护令牌和服务端主机都属于受信任边界。首次 SSH 连接使用 `StrictHostKeyChecking=accept-new`，需要严格固定主机指纹的环境应预先核验并配置 `state/known_hosts`。
 

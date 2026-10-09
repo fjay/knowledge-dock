@@ -34,6 +34,26 @@ if [ -d "/app/server/packages" ]; then
     ad link /app/server/packages/knowledge-maintenance >/dev/null 2>&1 || echo "[WARN] ad link knowledge-maintenance failed, falling back to build-time registry" >&2
 fi
 
+# 扫描扩展包目录：每个含 actiondock.json 的子目录自动安装生产依赖并 ad link。
+# 无 dependencies 的源码型包跳过 npm install，避免隔离网络下无谓的registry访问。
+# 依赖安装失败时告警不阻断：源码型无依赖包仍可正常 link，有依赖包的失败会在调用时暴露。
+EXTENSIONS_DIR="${EXTENSIONS_DIR:-/srv/extensions}"
+if [ -d "${EXTENSIONS_DIR}" ]; then
+    for pkg_dir in "${EXTENSIONS_DIR}"/*/; do
+        [ -f "${pkg_dir%/}/actiondock.json" ] || continue
+        pkg_name=$(basename "${pkg_dir%/}")
+        has_deps=$(node -e "const p=require('${pkg_dir%/}/package.json');process.stdout.write(p.dependencies?\"1\":\"0\")" 2>/dev/null || echo "0")
+        if [ "${has_deps}" = "1" ] && [ ! -d "${pkg_dir%/}/node_modules" ]; then
+            echo "[INFO] Installing dependencies for extension: ${pkg_name}"
+            (cd "${pkg_dir%/}" && npm install --omit=dev --no-audit --no-fund --prefer-offline --strict-ssl=false >/dev/null 2>&1) \
+                || echo "[WARN] npm install failed for extension ${pkg_name}, package may not load at runtime" >&2
+        fi
+        ad link "${pkg_dir%/}" >/dev/null 2>&1 \
+            && echo "[INFO] Linked extension package: ${pkg_name}" \
+            || echo "[WARN] ad link extension ${pkg_name} failed" >&2
+    done
+fi
+
 # 3. 如果通过 docker run / docker exec 传入了自定义命令，则直接执行该命令
 if [ "$#" -gt 0 ] && [ "$1" != "serve" ]; then
     exec "$@"

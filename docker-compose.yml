@@ -36,6 +36,8 @@ services:
       - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/certs:/etc/actiondock/certs:ro
       # 维护与系统日志目录
       - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/logs:/var/log/actiondock
+      # 扩展包目录（每个含 actiondock.json 的子目录启动时自动 npm install 并 ad link）
+      - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/extensions:/srv/extensions
       # 本地沙盒 Git 裸仓远端目录
       - ${KNOWLEDGE_DATA_DIR:-/data/knowledge}/remotes:/data/knowledge/remotes
     healthcheck:
