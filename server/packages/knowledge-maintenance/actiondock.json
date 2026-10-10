@@ -1077,7 +1077,7 @@
     },
     "maintenance.publish": {
       "entry": "actions/maintenance-publish.ts",
-      "description": "Commit and push local knowledge documentation modifications to remote origin branch (e.g. docs branch for code repos or master for system_knowledge).",
+      "description": "Commit and push local knowledge documentation modifications to remote origin branch (e.g. docs branch for code repos or current active branch for single-branch repos).",
       "inputSchema": {
         "type": "object",
         "required": [
@@ -1108,10 +1108,17 @@
           },
           "branch": {
             "type": "string",
-            "description": "Target branch to push to. Defaults to 'master' for system_knowledge and 'docs' for code repositories.",
+            "description": "Target branch to push to. Defaults to current active branch (or default branch) for single-branch repositories, and 'docs' for code repositories.",
             "examples": [
-              "master",
+              "main",
               "docs"
+            ]
+          },
+          "sourceBranch": {
+            "type": "string",
+            "description": "Optional fallback source branch when branch is omitted.",
+            "examples": [
+              "main"
             ]
           },
           "message": {

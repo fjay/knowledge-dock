@@ -345,4 +345,143 @@ describe("maintenance.publish", () => {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
+
+  it("resolves to current active main branch for system_knowledge repository when branch is omitted", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "publish-sys-main-"));
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      const executedCommands: string[] = [];
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        executedCommands.push(cmd);
+
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", "git@github.com:org/system-knowledge.git\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "branch --show-current") {
+          handle.emitOutput("stdout", "main\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "status --porcelain") {
+          handle.emitOutput("stdout", " M index.md\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --abbrev-ref HEAD") {
+          handle.emitOutput("stdout", "main\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "add -A") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "diff --cached --name-only") {
+          handle.emitOutput("stdout", "index.md\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd.startsWith("commit -m")) {
+          handle.emitOutput("stdout", "[main a1b2c3d] docs(system): sync payment domain flow\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse HEAD") {
+          handle.emitOutput("stdout", "a1b2c3d4e5f607182930415263748596a7b8c9d0\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "push origin main") {
+          handle.emitOutput("stdout", "To origin\n   1111222..a1b2c3d  main -> main\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(publishAction, {
+        path: tmpDir,
+        repoType: "system_knowledge",
+        message: "docs(system): sync payment domain flow",
+      });
+
+      assert.equal(res.status, "success");
+      assert.equal(res.committed, true);
+      assert.equal(res.pushed, true);
+      assert.equal(res.branch, "main");
+      assert.equal(res.commit, "a1b2c3d4e5f607182930415263748596a7b8c9d0");
+
+      assert.ok(executedCommands.includes("push origin main"));
+      assert.ok(!executedCommands.some((c) => c.includes("checkout master")));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("dynamically resolves to origin/HEAD default branch when in detached HEAD state", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "publish-detached-"));
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      const executedCommands: string[] = [];
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        executedCommands.push(cmd);
+
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", "git@github.com:org/system-knowledge.git\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "branch --show-current") {
+          handle.emitOutput("stdout", "");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --abbrev-ref HEAD") {
+          handle.emitOutput("stdout", "HEAD\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "symbolic-ref --short refs/remotes/origin/HEAD") {
+          handle.emitOutput("stdout", "origin/main\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "status --porcelain") {
+          handle.emitOutput("stdout", " M index.md\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --verify main") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "checkout main") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "add -A") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "diff --cached --name-only") {
+          handle.emitOutput("stdout", "index.md\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd.startsWith("commit -m")) {
+          handle.emitOutput("stdout", "[main a1b2c3d] docs(system): sync payment domain flow\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse HEAD") {
+          handle.emitOutput("stdout", "a1b2c3d4e5f607182930415263748596a7b8c9d0\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "push origin main") {
+          handle.emitOutput("stdout", "To origin\n   1111222..a1b2c3d  main -> main\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(publishAction, {
+        path: tmpDir,
+        repoType: "system_knowledge",
+        message: "docs(system): sync payment domain flow",
+      });
+
+      assert.equal(res.status, "success");
+      assert.equal(res.branch, "main");
+      assert.ok(executedCommands.includes("symbolic-ref --short refs/remotes/origin/HEAD"));
+      assert.ok(executedCommands.includes("push origin main"));
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

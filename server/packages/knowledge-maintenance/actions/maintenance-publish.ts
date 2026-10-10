@@ -34,28 +34,18 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   const repoType = input.repoType ?? (isInboxPath ? "inbox" : await detectRepoType(git, input.branch === "docs" ? "docs" : undefined));
 
   // Determine target branch
-  let targetBranch = input.branch;
+  let targetBranch = input.branch ?? input.sourceBranch;
   if (!targetBranch) {
-    if (repoType === "system_knowledge") {
-      const branches = await git.listBranchNames();
-      if (branches.includes("master") || branches.includes("origin/master")) {
-        targetBranch = "master";
-      } else if (branches.includes("main") || branches.includes("origin/main")) {
-        targetBranch = "main";
-      } else {
-        targetBranch = "master";
-      }
-    } else if (repoType === "inbox") {
-      const branches = await git.listBranchNames();
-      if (branches.includes("main") || branches.includes("origin/main")) {
-        targetBranch = "main";
-      } else if (branches.includes("master") || branches.includes("origin/master")) {
-        targetBranch = "master";
-      } else {
-        targetBranch = "main";
-      }
-    } else {
+    if (repoType === "code") {
       targetBranch = "docs";
+    } else {
+      const curBranchRes = await git.run(["branch", "--show-current"]);
+      const current = curBranchRes.stdout.trim() || (await git.run(["rev-parse", "--abbrev-ref", "HEAD"])).stdout.trim();
+      if (current && current !== "HEAD") {
+        targetBranch = current;
+      } else {
+        targetBranch = await git.getDefaultBranch();
+      }
     }
   }
 
