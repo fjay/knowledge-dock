@@ -102,7 +102,7 @@ metadata:
   ```bash
   ad run maintenance.complete --profile skm -- path="<repoPath>" commit="<to_commit>" actionTaken="<docs_updated|no_change_needed>" summary="..."
   ```
-- **文档改动提交与推送**（将本地知识文档修改提交并推送到远端知识分支或系统知识库 master 分支）：
+- **文档改动提交与推送**（将本地知识文档修改提交并推送到远端对应知识分支）：
   ```bash
   ad run maintenance.publish --profile skm -- path="<repoPath>" message="docs: update flow for budget limit"
   ```
@@ -175,7 +175,7 @@ docs/knowledge/
 - **知识可以渐进扩充**：发现新行为就更新地图，在授权范围内新增或合并主题；合并保留原行为、分支和定位。长流程可引用子流程和公共规则，但各段交接关系必须可追踪。
 - **源码优先，推测有边界**：旧文档和导入材料用于提供线索。区分测试预期与本次执行结果、代码支持的跨仓关系与已确认的实际部署关系。未知外部实现不补写为事实。
 - **布局与命名全局统一**：所有知识库（含系统层各业务领域）使用同一套类别目录和 `{kind}-{topic}.md` 命名，DDL 文档按库一篇 `ddl/data-ddl-{schema}.md`；细则以 layout.md 为准，不沿用历史布局，不为局部习惯发明新目录或新前缀。
-- **跨仓探索与绝对路径拓扑**：所有被纳管代码仓与系统知识仓均统一平铺存放在工作区根目录 `/srv/workspace` 下。ActionDock 所有工作区动作均使用绝对路径。智能体在负责单一代码仓维护时，完全允许且应当主动以绝对路径（如 `/srv/workspace/<sibling-repo>` 与 `/srv/workspace/system-knowledge`）访问兄弟仓库与系统知识仓，跨仓核验 DDL 引用、接口契约与调用链路，杜绝局限在单仓视野。
+- **跨仓探索与绝对路径拓扑**：所有被纳管代码仓与系统知识仓均平铺存放在同一工作区根目录下，实际根路径以用户提供的会话环境为准。ActionDock 所有工作区动作均使用绝对路径。智能体在负责单一代码仓维护时，完全允许且应当主动以绝对路径（如 `<workspaceRoot>/<sibling-repo>` 与 `<workspaceRoot>/<system-knowledge-repo>`）访问兄弟仓库与系统知识仓，跨仓核验 DDL 引用、接口契约与调用链路，杜绝局限在单仓视野。
 
 主 Agent 是决策与编排中枢：拆解目标、决定委派粒度、验收结果与最终取舍。宿主支持子代理时，执行性工作尽量委派，不把任何环节写死为"必须亲自做"：
 

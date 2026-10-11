@@ -87,7 +87,7 @@ flowchart TD
     E -->|"false"| F["已是对齐状态，结束"]
     E -->|"true"| G["智能体执行【更新门槛】与【失效四问】"]
     G --> H{"文档记载是否失效？"}
-    H -->|"是"| I["修改知识文档<br>（单仓 docs/knowledge/ 或跨仓 system-knowledge/）"]
+    H -->|"是"| I["修改知识文档<br>（单仓 docs/knowledge/ 或跨仓系统知识库/）"]
     H -->|"否"| J["文档无需变更"]
     I --> V["links.verify<br>断链自检与 files.edit 就地自愈修复"]
     V --> P["maintenance.publish<br>自动提交并直接推送对应分支"]
@@ -97,7 +97,7 @@ flowchart TD
 
 ### 分支同步（maintenance.sync）
 - 双分支代码仓（`code`）：拉取最新 `release` 合入 `docs` 分支并推送到远端；
-- 单分支系统仓（`system_knowledge`）：fast-forward 同步 `origin/master`；
+- 单分支系统仓（`system_knowledge`）：fast-forward 同步默认分支；
 - **安全红线**：若工作区存在脏文件返回 `dirty_worktree`；若存在合并冲突自动执行 `git merge --abort` 退出并返回 `conflict`。严禁使用 `git reset --hard` 或 `git push --force`。
 
 ### 变更扫描（maintenance.list）
@@ -130,7 +130,7 @@ flowchart TD
 ### 提交并推送文档改动（maintenance.publish）
 - 若本次修改了知识文档，调用 `maintenance.publish` 将变动提交并直接推送到远端知识分支：
   - 单仓代码库：推送到远端 `origin/docs` 分支；
-  - 系统知识库（`system-knowledge`）：若跨仓联动修改了中央系统知识库，直接推送到 `origin/master` 分支；
+  - 系统知识库（`system_knowledge`）：若跨仓联动修改了中央系统知识库，直接推送到其当前检出分支；
 - 调用规程：
   ```bash
   ad run maintenance.publish --profile skm -- path="<repoPath>" message="docs: update flow for budget limit"
