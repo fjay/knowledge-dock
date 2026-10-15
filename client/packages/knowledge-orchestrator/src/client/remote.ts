@@ -146,7 +146,7 @@ export async function publishRemoteRepo(
     cmd += ` branch="${escapeQuotes(options.branch)}"`;
   }
   if (options.push !== undefined) {
-    cmd += ` push=${options.push ? "true" : "false"}`;
+    cmd += ` push:=${options.push ? "true" : "false"}`;
   }
   const { stdout } = await execFn(cmd);
   if (!stdout || !stdout.trim()) {

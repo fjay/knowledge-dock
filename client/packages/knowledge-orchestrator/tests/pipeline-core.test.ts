@@ -2541,7 +2541,7 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
     assert.equal(executedCmds.length, 1);
     assert.equal(
       executedCmds[0],
-      'ad run maintenance.publish --profile skm --json -- path="/srv/knowledge-inbox" repoType="inbox" branch="main" push=true'
+      'ad run maintenance.publish --profile skm --json -- path="/srv/knowledge-inbox" repoType="inbox" branch="main" push:=true'
     );
     assert.equal(res.status, "success");
     assert.equal(res.pushed, true);
@@ -2597,7 +2597,7 @@ test("Pipeline Runner - 第三阶段 Knowledge Inbox 待审池串行巡检与消
     const publishCmd = executedCmds.find((c) => c.includes("maintenance.publish"));
     assert.ok(publishCmd, "必须触发 maintenance.publish");
     assert.ok(publishCmd.includes("/srv/custom-inbox"), "必须向 extraContext.inboxPath 指定的待审池路径推送");
-    assert.ok(publishCmd.includes("push=true"), "必须开启 push=true");
+    assert.ok(publishCmd.includes("push:=true"), "必须开启 push:=true");
     assert.ok(logs.some((l) => l.includes("收尾推送待审池仓库 (/srv/custom-inbox)")));
   });
 
