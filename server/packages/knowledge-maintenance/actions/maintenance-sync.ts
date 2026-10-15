@@ -17,6 +17,7 @@ interface RepoSyncConfig {
   knowledgeBranch?: string;
   filterBlobNone?: boolean;
   cloneTimeoutMs?: number;
+  preserveConflict?: boolean;
 }
 
 type SingleRepoResult = {
@@ -375,8 +376,13 @@ async function syncSingleRepo(
       .map((line: string) => line.slice(3).trim())
       .filter(Boolean);
 
-    ctx.log.info("Safely aborting merge via git merge --abort...");
-    await git.run(["merge", "--abort"]);
+    const shouldPreserve = repoInput.preserveConflict ?? false;
+    if (!shouldPreserve) {
+      ctx.log.info("Safely aborting merge via git merge --abort...");
+      await git.run(["merge", "--abort"]);
+    } else {
+      ctx.log.info("preserveConflict is enabled; preserving merge conflict state in worktree for autonomous agent resolution");
+    }
 
     return {
       status: "conflict",
@@ -386,7 +392,9 @@ async function syncSingleRepo(
       sourceBranch,
       knowledgeBranch: docsBranch,
       conflictFiles: conflictFiles.length > 0 ? conflictFiles : ["(conflicting files undetected)"],
-      message: `Merge conflict detected while merging origin/${sourceBranch} into ${docsBranch}; merge was safely aborted`,
+      message: shouldPreserve
+        ? `Merge conflict detected while merging origin/${sourceBranch} into ${docsBranch}; conflict state preserved in worktree for autonomous resolution`
+        : `Merge conflict detected while merging origin/${sourceBranch} into ${docsBranch}; merge was safely aborted`,
     };
   }
 
@@ -433,6 +441,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
         ...(input.knowledgeBranch !== undefined ? { knowledgeBranch: input.knowledgeBranch } : {}),
         ...(input.filterBlobNone !== undefined ? { filterBlobNone: input.filterBlobNone } : {}),
         ...(input.cloneTimeoutMs !== undefined ? { cloneTimeoutMs: input.cloneTimeoutMs } : {}),
+        ...(input.preserveConflict !== undefined ? { preserveConflict: input.preserveConflict } : {}),
       },
       ctx
     );
@@ -477,6 +486,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
             ...(item.knowledgeBranch ? { knowledgeBranch: item.knowledgeBranch } : {}),
             ...(item.filterBlobNone !== undefined ? { filterBlobNone: item.filterBlobNone } : {}),
             ...(typeof item.cloneTimeoutMs === "number" ? { cloneTimeoutMs: item.cloneTimeoutMs } : {}),
+            ...(item.preserveConflict !== undefined ? { preserveConflict: item.preserveConflict } : {}),
           });
         }
       }
@@ -544,6 +554,11 @@ export default defineAction<Input, Output>(async (input, ctx) => {
             ? { cloneTimeoutMs: repoConfig.cloneTimeoutMs }
             : input.cloneTimeoutMs !== undefined
             ? { cloneTimeoutMs: input.cloneTimeoutMs }
+            : {}),
+          ...(repoConfig.preserveConflict !== undefined
+            ? { preserveConflict: repoConfig.preserveConflict }
+            : input.preserveConflict !== undefined
+            ? { preserveConflict: input.preserveConflict }
             : {}),
         },
         ctx

@@ -837,4 +837,49 @@ describe("maintenance.list", () => {
       fs.rmSync(tmpBase, { recursive: true, force: true });
     }
   });
+
+  it("fetches origin before inspecting when fetch is true", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "list-fetch-"));
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      const executedCommands: string[] = [];
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        executedCommands.push(cmd);
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "fetch --filter=blob:none origin" || cmd === "fetch origin") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "branch -a --format=%(refname:short)") {
+          handle.emitOutput("stdout", "release\norigin/release\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse origin/release^{commit}") {
+          handle.emitOutput("stdout", "e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", "git@github.com:myorg/order-service.git\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-list --count e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3") {
+          handle.emitOutput("stdout", "10\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(listAction, { path: tmpDir, fetch: true });
+
+      assert.equal(res.hasChanges, true);
+      assert.ok(executedCommands.some((c) => c.startsWith("fetch")), "Must execute git fetch origin when fetch is true");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 });

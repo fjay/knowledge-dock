@@ -1,6 +1,8 @@
 import path from "node:path";
 import { buildPlaceholders } from "../template/placeholders.ts";
 import { dispatchRepo, type RepoDispatchContext } from "./repo-dispatcher.ts";
+import { syncRemoteRepo, abortMergeRemoteRepo } from "../client/remote.ts";
+import { defaultExec } from "../client/runner.ts";
 import type { PipelineOptions, PipelineHooks, RepoResult } from "../types.ts";
 
 export interface CodePhaseResult {
@@ -35,6 +37,9 @@ export async function runCodePhase(
   let completedCount = 0;
   let failedCount = 0;
 
+  const profile = options.profile || "skm";
+  const { execFn = defaultExec } = hooks;
+
   for (const repoItem of codeRepos) {
     const repoName = repoItem.repo || (repoItem.path ? path.basename(repoItem.path) : "");
 
@@ -67,7 +72,82 @@ export async function runCodePhase(
       results.push(res);
       onResult(res);
     } else {
-      const placeholders = buildPlaceholders(repoItem);
+      writeLog(`[SYNC] 开始同步仓库 ${repoName} (release -> docs)...`);
+      let syncRes: any;
+      try {
+        syncRes = await syncRemoteRepo(profile, repoItem.path, execFn, { preserveConflict: true });
+      } catch (err: any) {
+        failedCount++;
+        writeLog(`[ERROR] 仓库 ${repoName} 分支同步异常: ${err.message}`);
+        const res: RepoResult = {
+          repo: repoName,
+          path: repoItem.path,
+          repoType: "code",
+          status: "failed",
+          targetCommit: repoItem.to || repoItem.from || "",
+          durationMs: 0,
+          message: `分支同步失败: ${err.message}`,
+        };
+        results.push(res);
+        onResult(res);
+        continue;
+      }
+
+      if (syncRes.status === "dirty_worktree") {
+        failedCount++;
+        writeLog(`[ERROR] 仓库 ${repoName} 工作区存在未提交修改，跳过并记录失败`);
+        const res: RepoResult = {
+          repo: repoName,
+          path: repoItem.path,
+          repoType: "code",
+          status: "failed",
+          targetCommit: repoItem.to || repoItem.from || "",
+          durationMs: 0,
+          message: "工作区存在未提交修改，同步中止",
+        };
+        results.push(res);
+        onResult(res);
+        continue;
+      }
+
+      if (syncRes.status === "error") {
+        failedCount++;
+        writeLog(`[ERROR] 仓库 ${repoName} 同步失败: ${syncRes.message || "unknown error"}`);
+        const res: RepoResult = {
+          repo: repoName,
+          path: repoItem.path,
+          repoType: "code",
+          status: "failed",
+          targetCommit: repoItem.to || repoItem.from || "",
+          durationMs: 0,
+          message: `远端同步失败: ${syncRes.message || "unknown error"}`,
+        };
+        results.push(res);
+        onResult(res);
+        continue;
+      }
+
+      const isConflict = syncRes.status === "conflict";
+      if (isConflict) {
+        writeLog(
+          `[CONFLICT] 仓库 ${repoName} 存在合并冲突，保留现场并派发智能体自主消解 (冲突文件数: ${syncRes.conflictFiles?.length || 0})`
+        );
+      }
+
+      const placeholders = buildPlaceholders(
+        {
+          ...repoItem,
+          isConflict,
+          conflictFiles: syncRes.conflictFiles || [],
+          knowledgeBranch: syncRes.knowledgeBranch || "docs",
+        },
+        {
+          isConflict,
+          conflictFiles: syncRes.conflictFiles || [],
+          knowledgeBranch: syncRes.knowledgeBranch || "docs",
+        }
+      );
+
       const dispatchContext: RepoDispatchContext = {
         options,
         hooks,
@@ -86,6 +166,10 @@ export async function runCodePhase(
         completedCount++;
       } else {
         failedCount++;
+        if (isConflict) {
+          writeLog(`[CLEANUP] 仓库 ${repoName} 冲突消解未完成，执行自动回滚清理以恢复干净工作区...`);
+          await abortMergeRemoteRepo(profile, repoItem.path, execFn);
+        }
       }
       results.push(res);
       onResult(res);

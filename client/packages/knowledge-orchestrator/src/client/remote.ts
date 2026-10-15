@@ -19,10 +19,14 @@ export async function queryRemoteList(
   profile: string = "skm",
   repoPath: string | null = null,
   execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec,
-  branch?: string | null
+  branch?: string | null,
+  options?: { fetch?: boolean }
 ): Promise<any> {
   const safeProfile = validateProfile(profile);
   let cmd = `ad run maintenance.list --profile ${safeProfile} --json`;
+  if (options?.fetch) {
+    cmd += " fetch:=true";
+  }
   if (repoPath) {
     cmd += ` -- path="${escapeQuotes(repoPath)}"`;
     if (branch) {
@@ -30,6 +34,9 @@ export async function queryRemoteList(
     }
   }
   const { stdout } = await execFn(cmd);
+  if (!stdout || !stdout.trim()) {
+    return { results: [], hasChanges: false, status: "upToDate" };
+  }
   const parsed = JSON.parse(stdout);
   if (parsed.ok === false && parsed.error) {
     throw new Error(parsed.error.message || `ActionDock 错误: ${parsed.error.code}`);
@@ -64,16 +71,40 @@ export async function queryRemoteInboxList(
 export async function syncRemoteRepo(
   profile: string = "skm",
   repoPath: string,
-  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
+  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec,
+  options: { preserveConflict?: boolean } = {}
 ): Promise<any> {
   const safeProfile = validateProfile(profile);
-  const cmd = `ad run maintenance.sync --profile ${safeProfile} --json -- path="${escapeQuotes(repoPath)}"`;
+  let cmd = `ad run maintenance.sync --profile ${safeProfile} --json -- path="${escapeQuotes(repoPath)}"`;
+  if (options.preserveConflict) {
+    cmd += " preserveConflict:=true";
+  }
   const { stdout } = await execFn(cmd);
+  if (!stdout || !stdout.trim()) {
+    return { status: "success" };
+  }
   const parsed = JSON.parse(stdout);
   if (parsed.ok === false && parsed.error) {
     throw new Error(parsed.error.message || `ActionDock 错误: ${parsed.error.code}`);
   }
   return parsed.data ?? parsed;
+}
+
+/**
+ * 调用远端 workspace/bash.exec 安全中止冲突合并，清理工作区
+ */
+export async function abortMergeRemoteRepo(
+  profile: string = "skm",
+  repoPath: string,
+  execFn: (cmd: string) => Promise<{ stdout: string; stderr: string }> = defaultExec
+): Promise<void> {
+  const safeProfile = validateProfile(profile);
+  const cmd = `ad run workspace/bash.exec --profile ${safeProfile} --json -- cwd="${escapeQuotes(repoPath)}" command="git merge --abort"`;
+  try {
+    await execFn(cmd);
+  } catch {
+    // 容错处理：若已非合并状态或清理失败，不阻断流水线
+  }
 }
 
 /**

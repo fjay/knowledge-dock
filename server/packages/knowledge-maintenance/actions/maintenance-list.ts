@@ -24,6 +24,7 @@ interface RepoScanConfig {
   sourceBranch?: string | undefined;
   filterBlobNone?: boolean | undefined;
   cloneTimeoutMs?: number | undefined;
+  fetch?: boolean | undefined;
 }
 
 type SingleRepoScanResult = {
@@ -146,6 +147,28 @@ async function scanSingleRepo(
         "INVALID_REPO",
         400
       );
+    }
+
+    if (repoInput.fetch) {
+      const useBlobless = repoInput.filterBlobNone ?? ctx.config.get<boolean>("GIT_BLOBLESS_FETCH", true);
+      ctx.log.info("Fetching remote origin before inspecting target branch commits", {
+        path: resolvedPath,
+        useBlobless,
+      });
+      try {
+        const fetchRes = await git.fetchOrigin({ filterBlobNone: useBlobless });
+        if (fetchRes.code !== 0) {
+          ctx.log.warn("git fetch origin failed during maintenance.list; falling back to local references", {
+            path: resolvedPath,
+            error: fetchRes.stderr.trim() || fetchRes.stdout.trim(),
+          });
+        }
+      } catch (fetchErr: any) {
+        ctx.log.warn("Exception during git fetch origin in maintenance.list; falling back to local references", {
+          path: resolvedPath,
+          error: fetchErr.message,
+        });
+      }
     }
 
     // 1. Determine target branch and repo architecture type
@@ -324,6 +347,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       {
         path: input.path,
         branch: input.branch,
+        fetch: input.fetch,
       },
       ctx,
       true
@@ -368,6 +392,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
             ...(item.sourceBranch ? { branch: item.sourceBranch } : {}),
             ...(item.filterBlobNone !== undefined ? { filterBlobNone: item.filterBlobNone } : {}),
             ...(typeof item.cloneTimeoutMs === "number" ? { cloneTimeoutMs: item.cloneTimeoutMs } : {}),
+            ...(item.fetch !== undefined ? { fetch: item.fetch } : {}),
           });
         }
       }
@@ -416,6 +441,8 @@ export default defineAction<Input, Output>(async (input, ctx) => {
           path: repoConfig.path,
           repoType: repoConfig.repoType,
           branch: repoConfig.branch ?? input.branch,
+          fetch: repoConfig.fetch ?? input.fetch,
+          filterBlobNone: repoConfig.filterBlobNone,
         },
         ctx,
         false

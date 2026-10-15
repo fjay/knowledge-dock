@@ -178,6 +178,67 @@ describe("maintenance.sync", () => {
     }
   });
 
+  it("preserves conflict in worktree when preserveConflict is true", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-preserve-conflict-"));
+    try {
+      const fakeDriver = new FakeProcessDriver();
+      const executedCommands: string[] = [];
+
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        executedCommands.push(cmd);
+
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "status --porcelain") {
+          if (executedCommands.includes("merge --no-edit origin/release")) {
+            handle.emitOutput("stdout", "UU docs/knowledge/flow.md\n");
+          } else {
+            handle.emitOutput("stdout", "");
+          }
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "fetch --filter=blob:none origin" || cmd === "fetch origin") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --verify origin/docs") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "rev-parse --verify refs/heads/docs") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "checkout docs") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "merge --ff-only origin/docs") {
+          handle.emitExit({ code: 0, signal: null });
+        } else if (cmd === "merge --no-edit origin/release") {
+          handle.emitOutput("stderr", "CONFLICT (content): Merge conflict in docs/knowledge/flow.md\nAutomatic merge failed\n");
+          handle.emitExit({ code: 1, signal: null });
+        } else {
+          handle.emitExit({ code: 0, signal: null });
+        }
+        handle.emitOutputClosed("natural");
+      };
+
+      const runtime = createTestRuntime({
+        platform: createTestPlatform({ processDriver: fakeDriver }),
+      });
+
+      const res = await runtime.run(syncAction, {
+        path: tmpDir,
+        repoType: "code",
+        preserveConflict: true,
+      });
+
+      assert.equal(res.status, "conflict");
+      assert.deepEqual(res.conflictFiles, ["docs/knowledge/flow.md"]);
+      assert.ok(res.message.includes("preserved in worktree"));
+
+      // Verify strict contract: merge --abort was NOT called when preserveConflict: true
+      assert.ok(!executedCommands.includes("merge --abort"), "Must NOT execute git merge --abort when preserveConflict is true");
+      assert.ok(!executedCommands.some((c) => c.startsWith("push")), "Must not push on conflict");
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
   it("initializes docs branch when remote origin/docs does not exist", async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-init-branch-"));
     try {

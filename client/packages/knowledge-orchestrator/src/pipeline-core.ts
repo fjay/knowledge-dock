@@ -72,7 +72,7 @@ export async function runPipeline(
 
   // 1. 扫描远端全量或单仓状态
   writeLog("正在扫描远端受管仓库状态与检查点基线...");
-  const scanData = await queryRemoteList(profile, null, execFn);
+  const scanData = await queryRemoteList(profile, null, execFn, null, { fetch: true });
 
   let allRepos: any[] = [];
   if (Array.isArray(scanData.results)) {

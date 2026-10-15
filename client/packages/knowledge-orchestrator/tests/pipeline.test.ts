@@ -225,6 +225,9 @@ describe("orchestrator.pipeline", () => {
       } else if (cmd.includes("knowledge.list")) {
         handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { items: [] } }) + "\n");
         handle.emitExit({ code: 0, signal: null });
+      } else if (cmd.includes("maintenance.sync")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { status: "success" } }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
       } else {
         // 派发命令执行
         dispatchedCommands.push(cmd);
@@ -469,6 +472,9 @@ describe("orchestrator.pipeline", () => {
         handle.emitExit({ code: 0, signal: null });
         // 第一次查询返回候选，后续轮询探测时移出
         inboxItems = [];
+      } else if (cmd.includes("maintenance.sync")) {
+        handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { status: "success" } }) + "\n");
+        handle.emitExit({ code: 0, signal: null });
       } else if (cmd.includes("maintenance.publish")) {
         handle.emitOutput("stdout", JSON.stringify({ ok: true, data: { status: "success", committed: false, pushed: true, message: "待审池推送成功" } }) + "\n");
         handle.emitExit({ code: 0, signal: null });

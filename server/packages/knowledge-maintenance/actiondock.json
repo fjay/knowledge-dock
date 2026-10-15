@@ -107,6 +107,14 @@
           "cloneTimeoutMs": {
             "type": "integer",
             "description": "Custom timeout in milliseconds for git clone operations if cloning is required"
+          },
+          "preserveConflict": {
+            "type": "boolean",
+            "description": "Whether to preserve merge conflict state in worktree when merge fails instead of automatically aborting (defaults to false)",
+            "examples": [
+              true,
+              false
+            ]
           }
         }
       },
@@ -439,6 +447,14 @@
             "examples": [
               "release",
               "master"
+            ]
+          },
+          "fetch": {
+            "type": "boolean",
+            "description": "Whether to fetch remote origin before inspecting target branch commits (defaults to false)",
+            "examples": [
+              true,
+              false
             ]
           }
         }

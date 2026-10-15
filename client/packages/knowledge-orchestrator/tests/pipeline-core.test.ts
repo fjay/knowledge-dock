@@ -13,6 +13,7 @@ import {
   buildCodeRepoPrompt,
   buildSystemKnowledgePrompt,
   buildInboxCandidatePrompt,
+  buildConflictResolutionPrompt,
   buildInboxPlaceholders,
   buildPlaceholders,
   renderTemplate,
@@ -394,6 +395,55 @@ test("Pipeline Runner - 系统知识库全局维护提示词生成 (buildSystemK
     });
     assert.equal(placeholders.repoType, "system_knowledge");
     assert.ok(placeholders.prompt.includes("系统知识库全局聚合维护指导"));
+  });
+});
+
+test("Pipeline Runner - 冲突消解提示词生成 (buildConflictResolutionPrompt)", async (t) => {
+  const conflictData = {
+    repo: "order-service",
+    path: "/srv/workspace/order-service",
+    branch: "release",
+    knowledgeBranch: "docs",
+    to: "2222222222222222222222222222222222222222",
+    isConflict: true,
+    conflictFiles: ["docs/knowledge/flow.md", "docs/api.md"],
+    conflictFilesList: "  - docs/knowledge/flow.md\n  - docs/api.md",
+  };
+
+  const prompt = buildConflictResolutionPrompt(conflictData);
+
+  await t.test("验证任务背景包含冲突文件清单与分支定义", () => {
+    assert.ok(prompt.includes("知识维护单仓冲突消解任务指导"));
+    assert.ok(prompt.includes("order-service"));
+    assert.ok(prompt.includes("/srv/workspace/order-service"));
+    assert.ok(prompt.includes("主干分支：release"));
+    assert.ok(prompt.includes("知识分支：docs"));
+    assert.ok(prompt.includes("docs/knowledge/flow.md"));
+    assert.ok(prompt.includes("docs/api.md"));
+  });
+
+  await t.test("验证包含无人值守全自动消解与冲突标记清除铁律", () => {
+    assert.ok(prompt.includes("全自动自闭环铁律"));
+    assert.ok(prompt.includes("冲突标记清除铁律"));
+    assert.ok(prompt.includes("语义调和准则"));
+  });
+
+  await t.test("验证包含断链自检与检查点绝对推进标志", () => {
+    assert.ok(prompt.includes("workspace/links.verify"));
+    assert.ok(prompt.includes("maintenance/maintenance.publish"));
+    assert.ok(prompt.includes("maintenance/maintenance.complete"));
+    assert.ok(prompt.includes("conflict_resolved"));
+  });
+
+  await t.test("验证提示词遵循 AGENTS.md 规范（无数字序号列表、无表情符号、无粗体嵌套行内代码）", () => {
+    assert.ok(!/^\s*\d+\.\s/m.test(prompt));
+    assert.ok(!/[\u{1F300}-\u{1F9FF}]/u.test(prompt));
+    assert.ok(!/\*\*[^*]*`[^*]*\*\*/.test(prompt));
+  });
+
+  await t.test("验证 buildPrompt 传入 isConflict: true 自动分流到冲突消解提示词", () => {
+    const routedPrompt = buildPrompt(conflictData);
+    assert.ok(routedPrompt.includes("知识维护单仓冲突消解任务指导"));
   });
 });
 
@@ -884,6 +934,183 @@ test("Pipeline Runner - 流程调度与观测闭环（模拟执行）", async (t
 
     // 清理临时文件
     fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  await t.test("无人值守流程：检测到合并冲突时保留现场并派发智能体消解，超时自动回滚清理", async () => {
+    const executedCommands: string[] = [];
+    const dispatchedCmds: string[] = [];
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "conflict-repo",
+          path: "/srv/workspace/conflict-repo",
+          repoType: "code",
+          status: "changed",
+          hasChanges: true,
+          from: "1111111",
+          to: "2222222",
+        },
+      ],
+    };
+
+    let mockTime = 1000;
+    const nowFn = () => mockTime;
+    const sleepFn = async () => {
+      mockTime += 100000; // 直接步进以触发超时
+    };
+
+    const execFn = async (cmd: string) => {
+      executedCommands.push(cmd);
+      if (cmd.includes("maintenance.list")) {
+        return { stdout: JSON.stringify({ ok: true, data: mockScanData }), stderr: "" };
+      }
+      if (cmd.includes("maintenance.sync")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              status: "conflict",
+              path: "/srv/workspace/conflict-repo",
+              repoType: "code",
+              sourceBranch: "release",
+              knowledgeBranch: "docs",
+              conflictFiles: ["docs/knowledge/flow.md"],
+              message: "Merge conflict detected; conflict state preserved in worktree",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("bash.exec") && cmd.includes("git merge --abort")) {
+        return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+      }
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    };
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: "dispatch --repo {{repo}}",
+        timeout: 0.001,
+        interval: 0.001,
+        dryRun: false,
+        skipSystemKnowledge: true,
+        skipInbox: true,
+      },
+      {
+        execFn,
+        dispatchFn: async (cmd: string) => {
+          dispatchedCmds.push(cmd);
+        },
+        sleepFn,
+        nowFn,
+      }
+    )) as PipelineSummary;
+
+    assert.equal(result.total, 1);
+    assert.equal(result.completed, 0);
+    assert.equal(result.failed, 1);
+    // 验证派发了冲突消解任务
+    assert.equal(dispatchedCmds.length, 1);
+    assert.ok(dispatchedCmds[0].includes("conflict-repo"));
+
+    // 验证超时后自动触发了 git merge --abort 清理工作区，确保无人值守下不残留脏工作区
+    assert.ok(
+      executedCommands.some((c) => c.includes("bash.exec") && c.includes("git merge --abort")),
+      "Must call git merge --abort on timeout"
+    );
+  });
+
+  await t.test("无人值守流程：分支合并冲突成功消解并闭环推进", async () => {
+    const executedCommands: string[] = [];
+    const dispatchedCmds: string[] = [];
+
+    const mockScanData = {
+      batch: true,
+      results: [
+        {
+          repo: "conflict-resolved-repo",
+          path: "/srv/workspace/conflict-resolved-repo",
+          repoType: "code",
+          status: "changed",
+          hasChanges: true,
+          from: "1111111",
+          to: "2222222",
+        },
+      ],
+    };
+
+    let callCount = 0;
+    const execFn = async (cmd: string) => {
+      executedCommands.push(cmd);
+      if (cmd.includes("maintenance.list") && !cmd.includes("-- path=")) {
+        return { stdout: JSON.stringify({ ok: true, data: mockScanData }), stderr: "" };
+      }
+      if (cmd.includes("maintenance.sync")) {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              status: "conflict",
+              path: "/srv/workspace/conflict-resolved-repo",
+              repoType: "code",
+              sourceBranch: "release",
+              knowledgeBranch: "docs",
+              conflictFiles: ["docs/knowledge/flow.md"],
+              message: "Merge conflict detected; conflict state preserved in worktree",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      if (cmd.includes("maintenance.list") && cmd.includes("-- path=")) {
+        callCount++;
+        // 第一次轮询未完成，第二次完成
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              repo: "conflict-resolved-repo",
+              from: callCount >= 2 ? "2222222" : "1111111",
+              to: "2222222",
+              hasChanges: callCount < 2,
+              status: callCount >= 2 ? "upToDate" : "changed",
+            },
+          }),
+          stderr: "",
+        };
+      }
+      return { stdout: JSON.stringify({ ok: true }), stderr: "" };
+    };
+
+    const result = (await runPipeline(
+      {
+        profile: "skm",
+        dispatchCmd: 'dispatch --repo "{{repo}}" --prompt "{{prompt}}"',
+        timeout: 1,
+        interval: 0.001,
+        dryRun: false,
+        skipSystemKnowledge: true,
+        skipInbox: true,
+      },
+      {
+        execFn,
+        dispatchFn: async (cmd: string) => {
+          dispatchedCmds.push(cmd);
+        },
+      }
+    )) as PipelineSummary;
+
+    assert.equal(result.total, 1);
+    assert.equal(result.completed, 1);
+    assert.equal(result.failed, 0);
+    assert.equal(dispatchedCmds.length, 1);
+    // 验证派发模版注入了冲突指导语
+    assert.ok(dispatchedCmds[0].includes("知识维护单仓冲突消解任务指导"));
+    // 成功消解推进后，绝不触发回滚清理
+    assert.ok(!executedCommands.some((c) => c.includes("git merge --abort")));
   });
 });
 

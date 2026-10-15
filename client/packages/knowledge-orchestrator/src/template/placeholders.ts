@@ -82,6 +82,12 @@ export function buildPlaceholders(item: any = {}, extraContext: any = {}): Recor
   }
 
   const codePhaseSummary = extraContext.codePhaseSummary || "";
+  const isConflict = Boolean(item.isConflict || extraContext.isConflict);
+  const conflictFiles = item.conflictFiles || extraContext.conflictFiles || [];
+  const conflictFilesList = Array.isArray(conflictFiles) && conflictFiles.length > 0
+    ? conflictFiles.map((f: string) => `  - ${f}`).join("\n")
+    : "  - (未检测到具体冲突文件)";
+  const knowledgeBranch = item.knowledgeBranch || extraContext.knowledgeBranch || "docs";
 
   const prompt = buildPrompt({
     repo,
@@ -95,6 +101,10 @@ export function buildPlaceholders(item: any = {}, extraContext: any = {}): Recor
     diffSummary,
     commitsSummary,
     codePhaseSummary,
+    isConflict,
+    conflictFiles,
+    conflictFilesList,
+    knowledgeBranch,
   });
 
   return {
@@ -109,6 +119,10 @@ export function buildPlaceholders(item: any = {}, extraContext: any = {}): Recor
     diffSummary,
     commitsSummary,
     codePhaseSummary,
+    isConflict,
+    conflictFiles,
+    conflictFilesList,
+    knowledgeBranch,
     prompt,
     candidateId: "",
     candidateTitle: "",
