@@ -987,13 +987,15 @@
             "enum": [
               "docs_updated",
               "no_change_needed",
-              "skipped"
+              "skipped",
+              "conflict_resolved"
             ],
             "description": "Action taken during maintainer review. Defaults to 'no_change_needed'.",
             "examples": [
               "docs_updated",
               "no_change_needed",
-              "skipped"
+              "skipped",
+              "conflict_resolved"
             ]
           },
           "summary": {
@@ -1040,7 +1042,8 @@
             "enum": [
               "docs_updated",
               "no_change_needed",
-              "skipped"
+              "skipped",
+              "conflict_resolved"
             ],
             "description": "Action recorded for this maintenance cycle"
           },
