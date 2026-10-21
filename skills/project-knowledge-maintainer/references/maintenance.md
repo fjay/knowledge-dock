@@ -2,6 +2,18 @@
 
 采用“开发任务后的局部同步 + 阶段性反查遗漏”。依靠宿主 Git、搜索和阅读能力，不维护逐文件哈希，不需要先构建检查账本。
 
+## 源码覆盖补齐（backfill）优先规则
+
+`orchestrator.pipeline` 的 `mode` 为 `incremental`（默认）或 `backfill`。以下更新门槛用于增量维护；`backfill` 高于无变更跳过和已有文档 `scope` 门槛，不能据此拒绝调查未被文档纳管的源码主题。
+
+补齐任务无代码变更也先同步再核验，始终跳过 Inbox。`only="repo-a,repo-b"` 精确限定单仓补齐范围，但不切断后续系统定向聚合；单仓成功后自动交接本次知识变更，显式 `skipSystemKnowledge:=true` 才仅补单仓。未配置系统仓且未跳过时提前报错。系统层只围绕成功仓的本次主题更新相关领域；仅系统仓独立补齐才执行全景调查。`only` 未命中或含不能处理的目标时报错，失败仓不作为系统聚合的已完成依据。
+
+- 从当前源码真实入口、注册表、公共导出与测试发现主题，不局限 Git diff 或已有 scope；按调用、状态读写与失败传播追踪关键行为。
+- 对照既有文档，补充首次遗漏的流程、分支、契约、规则和恢复路径；保留人工内容及既有有效知识，不按篇数凑数、不全量重写。需要新主题时按统一布局落位，不以初始化类别篇数要求驱动新增。
+- 单仓只写本仓 `docs/knowledge/`，系统仓只写目标系统仓；其他仓可只读核验，不跨仓顺带修文档。
+- 有文档改动时仍须断链校验与发布；无缺口可不改文档，但核验后必须调用 `maintenance.complete`，产生新的 `checkpointUpdatedAt` 本次完成记录。旧同 commit 检查点不能提前结束任务。
+- 报告实际调查范围、补充内容与未解决缺口。这不是自动完整性验收器，不保证全仓知识完整。
+
 ## 更新门槛：先判断，再动手
 
 更新的锚点是**已写下的知识是否失效**，不是代码改动量。小改动若使记载变错仍须更新；大重构若不触及任何记载也可不更新。按三步判断，任一步给出“否”即到此为止：
@@ -83,11 +95,14 @@ flowchart TD
     A["maintenance.sync<br>(release → docs)"] --> B{"是否有冲突或未提交修改？"}
     B -->|"conflict / dirty"| C["安全回滚并报警中断<br>(严禁 force push/reset)"]
     B -->|"success"| D["maintenance.list<br>(扫描 commit 差异)"]
-    D --> E{"hasChanges?"}
-    E -->|"false"| F["已是对齐状态，结束"]
+    D --> M{"mode == backfill?"}
+    M -->|"是"| S["从当前源码发现主题<br>对照文档补齐遗漏"]
+    S --> H
+    M -->|"否"| E{"hasChanges?"}
+    E -->|"false"| L
     E -->|"true"| G["智能体执行【更新门槛】与【失效四问】"]
-    G --> H{"文档记载是否失效？"}
-    H -->|"是"| I["修改知识文档<br>（单仓 docs/knowledge/ 或跨仓系统知识库/）"]
+    G --> H{"文档是否失效或存在遗漏？"}
+    H -->|"是或发现遗漏"| I["修改知识文档<br>（仅目标仓授权目录）"]
     H -->|"否"| J["文档无需变更"]
     I --> V["links.verify<br>断链自检与 files.edit 就地自愈修复"]
     V --> P["maintenance.publish<br>自动提交并直接推送对应分支"]
@@ -102,12 +117,12 @@ flowchart TD
 
 ### 变更扫描（maintenance.list）
 - 对比当前 HEAD 与持久化记录的 `last_knowledge_checked_commit` 检查点；
-- 若 `hasChanges == false`：说明已无新增代码改动，跳过；
+- 若 `hasChanges == false`：说明无新增代码改动；增量模式无需冷启动建库时可跳过文档核验，仍须完成记录；`backfill` 不跳过源码补齐；
 - 若 `initialInventoryRequired == true`：无历史检查点，需执行首次全盘盘点；
 - 若有新增提交：返回结构化 `commits` 列表与 `changedFilesSummary`（变更文件清单与行数统计）。
 
 ### 智能体审查与失效四问
-针对 `changedFilesSummary` 中的修改文件，执行本文件第一节定义的**更新门槛**：
+增量模式针对 `changedFilesSummary` 中的修改文件，执行本文件定义的**更新门槛**；`backfill` 改按前述源码覆盖补齐规程：
 - **范围门槛**：变更文件是否在现有知识文档的 scope 或引用中？
 - **失效四问**：行为、契约、定位、缺失四维度逐个核验；
 - 若需要更新：在本地工作区修改对应文档；
@@ -130,7 +145,7 @@ flowchart TD
 ### 提交并推送文档改动（maintenance.publish）
 - 若本次修改了知识文档，调用 `maintenance.publish` 将变动提交并直接推送到远端知识分支：
   - 单仓代码库：推送到远端 `origin/docs` 分支；
-  - 系统知识库（`system_knowledge`）：若跨仓联动修改了中央系统知识库，直接推送到其当前检出分支；
+  - 系统知识库（`system_knowledge`）：若授权范围包含中央系统知识库并发生跨仓联动修改，直接推送到其当前检出分支；`backfill` 单仓任务仅写目标仓，不顺带修改系统仓；
 - 调用规程：
   ```bash
   ad run maintenance.publish --profile skm -- path="<repoPath>" message="docs: update flow for budget limit"
@@ -138,7 +153,8 @@ flowchart TD
 
 ### 推进检查点水位（maintenance.complete）
 - **核心铁律**：无论本次是否修改了知识文档，都必须调用 `maintenance.complete` 推进检查点水位。
-- 原因：检查点的语义是**“这段代码差异已经被知识维护流程检查过”**，推进水位防止下次重复扫描；
+- 原因：检查点记录本次维护核验的目标提交与完成时间；增量模式避免重复扫描，补齐模式即使同 commit 也需新的 `checkpointUpdatedAt` 本次完成记录，不能复用旧记录判成功；
+- 单仓知识交接：发布前记录本次文档改动，在 complete 的 `summary` 中概括主题与跨仓影响，并提交 `knowledgeChanges` 数组（每项 `path` 为安全的仓库相对文档路径、`summary` 为变化说明）。无改动显式传 `knowledgeChanges:=[]`，缺省不等于无改动；不使用历史记录或发布后为空的工作区 diff 冒充本次清单。系统代理从最新完成记录接收这些线索，再核对正文和源码。
 - 调用规程：
   ```bash
   # 修改了文档时：

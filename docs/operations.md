@@ -11,7 +11,7 @@ ad run maintenance/maintenance.list --profile skm -- path="/srv/workspace/order-
 
 `initial` 表示尚无检查点，需要完成首次知识盘点；`changed` 表示有未审提交；`upToDate` 表示目标分支与检查点一致。使用返回的 `to` 作为本轮审查目标。同步或扫描失败时先处理错误，不能直接调用 `maintenance.complete` 以跳过变更。
 
-检查点基线推进机制记录“这个提交及以前的变更已完成审查”。即使确认文档无需修改，也应写入结论，避免同一批提交在下一轮重复进入审查。
+检查点基线推进机制记录“这个提交及以前的变更已完成审查”，不证明知识已完整覆盖源码。即使确认文档无需修改，也应写入结论，避免同一批提交在下一轮重复进入审查。补齐历史遗漏可用本地流水线 `mode="backfill" only="目标代码仓"`，默认在单仓完成后联动系统层定向聚合，详见[编排指南](orchestration.md)。
 
 ## 发布前检查
 
@@ -56,10 +56,14 @@ ad run maintenance/maintenance.complete --profile skm -- \
   path="/srv/workspace/order-service" \
   commit="<本轮扫描返回的 to 提交哈希>" \
   actionTaken="docs_updated" \
-  summary="已核对并更新订单流程文档"
+  summary="已补齐订单失败恢复及跨仓交接" \
+  knowledgeChanges.0.path="docs/knowledge/flow/flow-order-create.md" \
+  knowledgeChanges.0.summary="补充失败恢复路径与下游状态交接"
 ```
 
-若审查结论是不需要更改文档，将 `actionTaken` 改为 `no_change_needed`，并在 `summary` 写出判断依据。`maintenance.complete` 会检查提交是否存在，但不会验证文档是否已发布或结论是否正确；它应由维护流程在检查完成后调用。
+若审查结论是不需要更改文档，将 `actionTaken` 改为 `no_change_needed`，在 `summary` 写出判断依据，并显式传 `knowledgeChanges:=[]`。发布前记录本任务的文档变更，不用历史清单或发布后为空的工作区 diff 代替本次结果。
+
+`maintenance.list` 在 `checkpointSummary` 和 `knowledgeChanges` 中回传最新完成记录，供系统代理定向核验。清单缺省表示未回传，不等于没有改动；完成动作不会继承上次清单。`maintenance.complete` 会检查提交存在及交接路径安全，但不会验证文档已发布或结论正确；它应由维护流程在检查完成后调用。
 
 需要重新审查一段历史时，可以有意识地把检查点设为较早且仍存在的提交。先确认仓库分支关系与目标哈希，再记录原因；随意回退或跳过检查点会改变下一轮扫描范围。
 

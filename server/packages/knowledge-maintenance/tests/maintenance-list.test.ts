@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
-import { createTestRuntime, createTestPlatform, FakeProcessDriver, MockProcessExecutor } from "@actiondock/testing";
+import { createTestRuntime, createTestPlatform, FakeProcessDriver } from "@actiondock/testing";
 import { encodeStateKey } from "@actiondock/sdk";
 import listAction from "../actions/maintenance-list.ts";
 
@@ -52,6 +51,9 @@ describe("maintenance.list", () => {
       assert.equal(res.initialInventoryRequired, true);
       assert.deepEqual(res.commits, []);
       assert.ok(res.message.includes("full inventory required"));
+      assert.equal(res.checkpointSummary, null);
+      assert.equal(Object.hasOwn(res, "knowledgeChanges"), false);
+      assert.equal(Object.hasOwn(res, "summary"), false);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -84,10 +86,13 @@ describe("maintenance.list", () => {
         platform: createTestPlatform({ processDriver: fakeDriver }),
       });
 
+      const knowledgeChanges = [{ path: "docs/支付.md", summary: "补充支付回调主题" }];
       // Pre-seed checkpoint in state
       await runtime.state.set(encodeStateKey("checkpoints", "demo-repo"), {
         commit: headCommit,
         updatedAt: "2026-09-24T00:00:00Z",
+        summary: "更新支付知识",
+        knowledgeChanges,
       });
 
       const res = await runtime.run(listAction, { path: tmpDir, branch: "release" });
@@ -99,6 +104,9 @@ describe("maintenance.list", () => {
       assert.deepEqual(res.commits, []);
       assert.equal(res.initialInventoryRequired, false);
       assert.ok(res.message.includes("up to date"));
+      assert.equal(res.checkpointSummary, "更新支付知识");
+      assert.deepEqual(res.knowledgeChanges, knowledgeChanges);
+      assert.equal(Object.hasOwn(res, "summary"), false);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -147,10 +155,13 @@ describe("maintenance.list", () => {
         platform: createTestPlatform({ processDriver: fakeDriver }),
       });
 
+      const knowledgeChanges = [{ path: "docs/预算.md", summary: "更新预算限制与校验主题" }];
       // Pre-seed checkpoint in state
       await runtime.state.set(encodeStateKey("checkpoints", "demo-repo"), {
         commit: fromCommit,
         updatedAt: "2026-09-24T00:00:00Z",
+        summary: "上次预算文档更新",
+        knowledgeChanges,
       });
 
       const res = await runtime.run(listAction, { path: tmpDir, branch: "release" });
@@ -167,6 +178,73 @@ describe("maintenance.list", () => {
       assert.equal(res.changedFilesSummary?.insertions, 30);
       assert.equal(res.changedFilesSummary?.deletions, 8);
       assert.equal(res.changedFilesSummary?.files?.length, 2);
+      assert.equal(res.checkpointSummary, "上次预算文档更新");
+      assert.deepEqual(res.knowledgeChanges, knowledgeChanges);
+      assert.equal(Object.hasOwn(res, "summary"), false);
+    } finally {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads legacy checkpoints and warns on malformed metadata without inventing a complete list", async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "list-legacy-metadata-"));
+    try {
+      const headCommit = "1111222233334444555566667777888899990000";
+      const fakeDriver = new FakeProcessDriver();
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+        } else if (cmd === "rev-parse release^{commit}") {
+          handle.emitOutput("stdout", `${headCommit}\n`);
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", "https://github.com/myorg/demo-repo.git\n");
+        } else if (cmd.startsWith("rev-list --count")) {
+          handle.emitOutput("stdout", "1\n");
+        }
+        handle.emitExit({ code: 0, signal: null });
+        handle.emitOutputClosed("natural");
+      };
+      const runtime = createTestRuntime({ platform: createTestPlatform({ processDriver: fakeDriver }) });
+      const stateKey = encodeStateKey("checkpoints", "demo-repo");
+      const goodChange = { path: "docs/主题.md", summary: "主题说明" };
+      const cases = [
+        { record: { commit: headCommit }, summary: null, warnings: 0 },
+        { record: { commit: headCommit, summary: "旧版本摘要" }, summary: "旧版本摘要", warnings: 0 },
+        { record: { commit: headCommit, summary: "", knowledgeChanges: null }, summary: "", warnings: 0 },
+        { record: { commit: headCommit, summary: 42 }, summary: null, warnings: 1 },
+        ...[{}, "invalid", [null], [goodChange, { path: "../secret.md", summary: "越界" }],
+          [{ path: "docs/主题.md", summary: " " }],
+        ].map((knowledgeChanges) => ({
+          record: { commit: headCommit, summary: "摘要保留", knowledgeChanges },
+          summary: "摘要保留",
+          warnings: 1,
+        })),
+      ];
+      for (const testCase of cases) {
+        await runtime.state.set(stateKey, testCase.record);
+        runtime.logger.logs.length = 0;
+        const res = await runtime.run(listAction, { path: tmpDir, branch: "release" });
+        assert.equal(res.hasChanges, false);
+        assert.equal(res.checkpointSummary, testCase.summary);
+        assert.equal(Object.hasOwn(res, "knowledgeChanges"), false);
+        const warnings = runtime.logger.logs.filter((entry) => entry.level === "warn");
+        assert.equal(warnings.length, testCase.warnings, JSON.stringify(testCase.record));
+        if (warnings.length) assert.match(warnings[0].message, /Invalid checkpoint/);
+        assert.deepEqual(await runtime.state.get(stateKey), testCase.record);
+      }
+
+      // 即使缺少 commit 而走 initial 分支，仍按保存状态原样提供交接元数据。
+      await runtime.state.set(stateKey, { summary: "初始盘点摘要", knowledgeChanges: [goodChange] });
+      const initial = await runtime.run(listAction, { path: tmpDir, branch: "release" });
+      assert.equal(initial.initialInventoryRequired, true);
+      assert.equal(initial.checkpointSummary, "初始盘点摘要");
+      assert.deepEqual(initial.knowledgeChanges, [goodChange]);
+
+      await runtime.state.set(stateKey, { commit: headCommit, summary: "无改动", knowledgeChanges: [] });
+      const empty = await runtime.run(listAction, { path: tmpDir, branch: "release" });
+      assert.equal(empty.checkpointSummary, "无改动");
+      assert.deepEqual(empty.knowledgeChanges, []);
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -281,14 +359,19 @@ describe("maintenance.list", () => {
         platform: createTestPlatform({ processDriver: fakeDriver }),
       });
 
+      const knowledgeChanges = [{ path: "docs/用户.md", summary: "用户校验主题更新" }];
       // Pre-seed checkpoints
       await runtime.state.set(encodeStateKey("checkpoints", "user-service"), {
         commit: changedPrevCommit,
         updatedAt: "2026-09-24T00:00:00Z",
+        summary: "用户文档已更新",
+        knowledgeChanges,
       });
       await runtime.state.set(encodeStateKey("checkpoints", "system-knowledge"), {
         commit: upToDateCommit,
         updatedAt: "2026-09-24T00:00:00Z",
+        summary: "已核验无文档改动",
+        knowledgeChanges: [],
       });
 
       const res = await runtime.run(listAction, {
@@ -309,17 +392,23 @@ describe("maintenance.list", () => {
       assert.equal(res.results?.[0]?.hasChanges, true);
       assert.equal(res.results?.[0]?.initialInventoryRequired, true);
       assert.equal(res.results?.[0]?.commitCount, 42);
+      assert.equal(res.results?.[0]?.checkpointSummary, null);
+      assert.equal(Object.hasOwn(res.results![0], "knowledgeChanges"), false);
 
       assert.equal(res.results?.[1]?.status, "changed");
       assert.equal(res.results?.[1]?.repo, "user-service");
       assert.equal(res.results?.[1]?.hasChanges, true);
       assert.equal(res.results?.[1]?.commitCount, 1);
       assert.equal(res.results?.[1]?.commits?.[0]?.shortHash, "3333333");
+      assert.equal(res.results?.[1]?.checkpointSummary, "用户文档已更新");
+      assert.deepEqual(res.results?.[1]?.knowledgeChanges, knowledgeChanges);
 
       assert.equal(res.results?.[2]?.status, "upToDate");
       assert.equal(res.results?.[2]?.repo, "system-knowledge");
       assert.equal(res.results?.[2]?.hasChanges, false);
       assert.equal(res.results?.[2]?.commitCount, 0);
+      assert.equal(res.results?.[2]?.checkpointSummary, "已核验无文档改动");
+      assert.deepEqual(res.results?.[2]?.knowledgeChanges, []);
 
       assert.ok(res.message.includes("1 changed, 1 initial, 1 up to date"));
     } finally {
@@ -405,6 +494,10 @@ describe("maintenance.list", () => {
       assert.equal(res.summary?.changedCount, 0);
       assert.equal(res.summary?.initialCount, 0);
       assert.equal(res.summary?.errorCount, 0);
+      for (const result of res.results ?? []) {
+        assert.equal(result.checkpointSummary, null);
+        assert.equal(Object.hasOwn(result, "knowledgeChanges"), false);
+      }
       assert.ok(res.message.includes("All 2 repositories are up to date"));
     } finally {
       fs.rmSync(tmpBase, { recursive: true, force: true });
@@ -489,105 +582,59 @@ describe("maintenance.list", () => {
   });
 
   it("batch scan clones repository from url when target path does not exist locally", async () => {
-    // 真实 git 驱动验证：FakeProcessDriver 不落盘，克隆后路径仍不存在会污染后续扫描
     const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), "list-batch-clone-"));
-    const remoteDir = path.join(tmpBase, "remotes", "new-repo.git");
     const repoExisting = path.join(tmpBase, "existing-repo");
     const repoMissing = path.join(tmpBase, "missing-repo");
     const configFile = path.join(tmpBase, "repos.json");
-
-    // 构造真实裸仓作为克隆远端（release 分支 + 单个提交）
-    fs.mkdirSync(remoteDir, { recursive: true });
-    const gitEnv = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
-    for (const args of [
-      ["init", "--bare", "-q"],
-    ] as const) {
-      const res = spawnSync("git", [...args], { cwd: remoteDir, env: gitEnv });
-      assert.equal(res.status, 0, `git ${args.join(" ")} failed: ${res.stderr}`);
-    }
-    const seedDir = path.join(tmpBase, "seed");
-    fs.mkdirSync(seedDir, { recursive: true });
-    const seedSteps: string[][] = [
-      ["init", "-q", "--initial-branch=release"],
-      ["config", "user.email", "test@test.com"],
-      ["config", "user.name", "test"],
-      ["add", "-A"],
-      ["commit", "-qm", "init"],
-      ["push", "-q", remoteDir, "release"],
-    ];
-    fs.writeFileSync(path.join(seedDir, "README.md"), "seed\n");
-    for (const args of seedSteps) {
-      const res = spawnSync("git", args, { cwd: seedDir, env: gitEnv });
-      assert.equal(res.status, 0, `git ${args.join(" ")} failed: ${res.stderr}`);
-    }
-
-    // 已存在仓库：本地初始化 release 分支并写入检查点，验证其不被重新克隆
+    const remoteUrl = "https://github.com/myorg/new-repo.git";
+    const existingCommit = "1111111111111111111111111111111111111111";
+    const clonedCommit = "2222222222222222222222222222222222222222";
     fs.mkdirSync(repoExisting, { recursive: true });
-    fs.writeFileSync(path.join(repoExisting, "README.md"), "existing\n");
-    for (const args of [
-      ["init", "-q", "--initial-branch=release"],
-      ["config", "user.email", "test@test.com"],
-      ["config", "user.name", "test"],
-      ["add", "-A"],
-      ["commit", "-qm", "init"],
-    ] as const) {
-      const res = spawnSync("git", [...args], { cwd: repoExisting, env: gitEnv });
-      assert.equal(res.status, 0, `git ${args.join(" ")} failed: ${res.stderr}`);
-    }
-    const existingHead = spawnSync("git", ["rev-parse", "HEAD"], {
-      cwd: repoExisting,
-      env: gitEnv,
-    });
-    assert.equal(existingHead.status, 0);
-    const existingCommit = existingHead.stdout.toString().trim();
-
-    fs.writeFileSync(
-      configFile,
-      JSON.stringify([
-        { path: repoExisting, repoType: "code", sourceBranch: "release" },
-        { path: repoMissing, url: remoteDir, repoType: "code", sourceBranch: "release" },
-      ])
-    );
-
-    const prevWorkspaceRoot = process.env.WORKSPACE_ROOT;
-    process.env.WORKSPACE_ROOT = tmpBase;
+    fs.writeFileSync(configFile, JSON.stringify([
+      { path: repoExisting, repoType: "code", sourceBranch: "release" },
+      { path: repoMissing, url: remoteUrl, repoType: "code", sourceBranch: "release" },
+    ]));
 
     try {
-      const executor = new MockProcessExecutor({ fallbackToReal: true });
-      const runtime = createTestRuntime({ platform: createTestPlatform({ process: executor }) });
+      const fakeDriver = new FakeProcessDriver();
+      fakeDriver.onSpawn = (handle: any, spec: any) => {
+        const cmd = spec.args.join(" ");
+        if (spec.args[0] === "clone") {
+          assert.ok(spec.args.includes(remoteUrl));
+          assert.equal(spec.args.at(-1), repoMissing);
+          // 模拟克隆落盘，后续路径校验仍走真实文件系统。
+          fs.mkdirSync(path.join(repoMissing, ".git"), { recursive: true });
+        } else if (cmd === "rev-parse --is-inside-work-tree") {
+          handle.emitOutput("stdout", "true\n");
+        } else if (cmd === "branch -a --format=%(refname:short)") {
+          handle.emitOutput("stdout", "release\norigin/release\n");
+        } else if (cmd === "rev-parse origin/release^{commit}") {
+          handle.emitOutput("stdout", `${spec.cwd === repoExisting ? existingCommit : clonedCommit}\n`);
+        } else if (cmd === "config --get remote.origin.url") {
+          handle.emitOutput("stdout", spec.cwd === repoExisting
+            ? "https://github.com/myorg/existing-repo.git\n" : `${remoteUrl}\n`);
+        } else if (cmd.startsWith("rev-list --count")) {
+          handle.emitOutput("stdout", "1\n");
+        }
+        handle.emitExit({ code: 0, signal: null });
+        handle.emitOutputClosed("natural");
+      };
+      const runtime = createTestRuntime({ platform: createTestPlatform({ processDriver: fakeDriver }) });
+      await runtime.state.set(encodeStateKey("checkpoints", "existing-repo"), { commit: existingCommit });
+      const res = await runtime.run(listAction, { config: configFile });
 
-      await runtime.state.set(encodeStateKey("checkpoints", "existing-repo"), {
-        commit: existingCommit,
-      });
-
-      const res = await runtime.run(listAction, {
-        config: configFile,
-      });
-
-      // 不存在的仓库被真实克隆到目标路径
-      assert.ok(fs.existsSync(path.join(repoMissing, ".git")), "Missing repository must be cloned to target path");
-
+      assert.ok(fs.existsSync(path.join(repoMissing, ".git")));
       assert.equal(res.batch, true);
       assert.equal(res.summary?.total, 2);
-      // 已存在仓检查点对齐 -> upToDate；新克隆仓无检查点 -> initial 全量盘点
-      assert.equal(res.summary?.upToDateCount, 1, `summary: ${JSON.stringify(res.summary)}`);
+      assert.equal(res.summary?.upToDateCount, 1);
       assert.equal(res.summary?.initialCount, 1);
       assert.equal(res.summary?.errorCount, 0);
-      const cloned = res.results?.find((r: any) => r.path === repoMissing);
+      const cloned = res.results?.find((result) => result.path === repoMissing);
       assert.equal(cloned?.status, "initial");
       assert.equal(cloned?.initialInventoryRequired, true);
-      const clonedHead = spawnSync("git", ["rev-parse", "origin/release"], {
-        cwd: repoMissing,
-        env: gitEnv,
-      });
-      assert.equal(clonedHead.status, 0);
-      assert.equal(cloned?.to, clonedHead.stdout.toString().trim());
+      assert.equal(cloned?.to, clonedCommit);
+      assert.equal(fakeDriver.spawnCalls.filter((call) => call.spec.args?.[0] === "clone").length, 1);
     } finally {
-      if (prevWorkspaceRoot !== undefined) {
-        process.env.WORKSPACE_ROOT = prevWorkspaceRoot;
-      } else {
-        delete process.env.WORKSPACE_ROOT;
-      }
       fs.rmSync(tmpBase, { recursive: true, force: true });
     }
   });

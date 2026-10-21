@@ -31,6 +31,18 @@ ad run orchestrator.pipeline -- profile="skm" dryRun:=true
 
 系统知识阶段接收前序仓库的变更摘要，以便核对跨仓业务流程。待审池按候选逐个处理，避免多个任务同时编辑同一份正式知识。调度器等待状态变化；派发命令退出成功不等于维护已完成。
 
+## 补齐与系统层定向聚合
+
+`mode="backfill"` 从当前源码补齐历史遗漏，不受无提交变更或旧检查点对齐限制。`only="repo-a,repo-b"` 精确限定单仓补齐目标，单仓成功后自动向受管系统知识仓代理交接本次文档路径和主题摘要，定向更新相关领域与跨仓流程，不重新扫描无关代码仓。
+
+显式 `skipSystemKnowledge:=true` 才仅补单仓；未配置系统仓且未跳过时提前报错。全部单仓失败时跳过定向聚合，部分成功只交接成功仓。仅指定系统仓、没有代码仓任务时，执行系统层全景补齐。补齐模式始终跳过 Inbox。
+
+```bash
+ad run orchestrator.pipeline -- profile="skm" mode="backfill" only="order-service" dryRun:=true
+```
+
+预演会展示自动纳入的系统仓；实际执行需提供 `dispatchCmd` 并去掉 `dryRun:=true`。单仓通过 `maintenance.complete` 的 `summary` 和 `knowledgeChanges`（每项 `path`、`summary`）回传本次主题与文档变更。清单缺省不等于无改动，空数组才表示已核验无文档改动。调度器仅采用本次新完成记录的元数据，旧同提交记录不能提前结束补齐。完整交接协议见[子包 README](../client/packages/knowledge-orchestrator/README.md)。
+
 ## 派发命令
 
 `dispatchCmd` 是命令模板，调度器在本机执行渲染结果。下例中的 `my-agent.dispatch` 是接入方需要提供的动作名称，并非本仓自带组件：
@@ -49,10 +61,11 @@ ad run orchestrator.pipeline -- \
 
 | 入参 | 默认值 | 用途 |
 |---|---|---|
+| `mode` | `incremental` | 增量维护；`backfill` 为单仓源码补齐及后续系统定向聚合 |
 | `profile` | `skm` | 远端维护视图配置名 |
 | `dispatchCmd` | 空 | 正式运行时必填的派发命令模板 |
 | `dryRun` | `false` | 只扫描并预览待派发任务 |
-| `only` | 全部仓库 | 以仓库名或逗号分隔名称缩小范围 |
+| `only` | 全部仓库 | 精确仓库名或逗号分隔列表；补齐时不切断后续系统聚合 |
 | `skipSystemKnowledge` | `false` | 跳过系统知识聚合 |
 | `skipInbox` | `false` | 跳过待审池消费 |
 | `timeout` | `15` | 单个任务等待检查点变化的分钟数 |

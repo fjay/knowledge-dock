@@ -37,6 +37,7 @@ export async function runCodePhase(
   let completedCount = 0;
   let failedCount = 0;
 
+  const isBackfill = options.mode === "backfill";
   const profile = options.profile || "skm";
   const { execFn = defaultExec } = hooks;
 
@@ -57,7 +58,7 @@ export async function runCodePhase(
       };
       results.push(res);
       onResult(res);
-    } else if (!repoItem.hasChanges && repoItem.status !== "initial" && repoItem.status !== "changed") {
+    } else if (!isBackfill && !repoItem.hasChanges && repoItem.status !== "initial" && repoItem.status !== "changed") {
       skippedCount++;
       writeLog(`[SKIP] 仓库 ${repoName} (code) 检查点已对齐，跳过`);
       const res: RepoResult = {
@@ -142,6 +143,7 @@ export async function runCodePhase(
           knowledgeBranch: syncRes.knowledgeBranch || "docs",
         },
         {
+          mode: options.mode ?? "incremental",
           isConflict,
           conflictFiles: syncRes.conflictFiles || [],
           knowledgeBranch: syncRes.knowledgeBranch || "docs",
@@ -176,14 +178,25 @@ export async function runCodePhase(
     }
   }
 
-  const updatedCodeRepos = results.filter((r) => r.status === "completed");
+  const updatedCodeRepos = results.filter((r) => r.status === "completed" && r.actionTaken !== "skipped");
   let codePhaseSummary = "";
   if (updatedCodeRepos.length > 0) {
     codePhaseSummary =
-      `前序已完成巡检且发生更新的代码仓（共 ${updatedCodeRepos.length} 个）：\n` +
-      updatedCodeRepos.map((r) => `- ${r.repo}：已推进检查点至 ${r.targetCommit || "HEAD"}`).join("\n");
+      `前序已完成知识维护的代码仓（共 ${updatedCodeRepos.length} 个，仅包含本次成功任务）：\n` +
+      updatedCodeRepos.map((r) => [
+        `- 仓库：${r.repo}；路径：${r.path}；检查点：${r.targetCommit || "HEAD"}`,
+        `  - 知识目录：${r.path}/docs/knowledge/`,
+        `  - 本次处置：${r.actionTaken || "未回传"}`,
+        `  - 本次主题摘要：${r.checkpointSummary || "未回传，须读取该仓知识索引与文档核验"}`,
+        `  - 本次文档变更：`,
+        ...(r.knowledgeChanges === undefined
+          ? [`    - 未回传清单，不能据此认定无改动，也不能使用历史清单冒充本次结果。请仅围绕该仓知识目录与相关主题定向核验。`]
+          : r.knowledgeChanges.length === 0
+            ? [`    - 本次未产生文档改动（已核验）。`]
+            : r.knowledgeChanges.map((change) => `    - ${change.path}：${change.summary}`)),
+      ].join("\n")).join("\n");
   } else {
-    codePhaseSummary = "前序代码仓巡检完毕，所有代码仓均无变更或无需更新文档。";
+    codePhaseSummary = "本次没有成功完成知识维护的代码仓；未派发或失败仓不能作为已同步依据。";
   }
 
   return {

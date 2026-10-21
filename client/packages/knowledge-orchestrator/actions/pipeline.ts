@@ -12,6 +12,7 @@ export type Input = ActionInput<"orchestrator.pipeline">;
 export type Output = ActionOutput<"orchestrator.pipeline">;
 
 export default defineAction<Input, Output>(async (input, ctx) => {
+  const mode = input.mode ?? "incremental";
   const profile = input.profile ?? "skm";
   const dryRun = input.dryRun ?? false;
   const dispatchCmd = input.dispatchCmd ?? "";
@@ -27,6 +28,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   const execTimeoutMs = ctx.config.get<number>("COMMAND_TIMEOUT_MS", 600000);
 
   ctx.log.info("Starting orchestrator.pipeline", {
+    mode,
     profile,
     dryRun,
     only,
@@ -140,6 +142,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
 
   const rawResult = await runPipeline(
     {
+      mode,
       profile,
       dispatchCmd,
       timeout,
@@ -158,11 +161,12 @@ export default defineAction<Input, Output>(async (input, ctx) => {
 
   if (rawResult.dryRun) {
     const mdReport = generateMarkdownReport({
+      mode,
       profile,
       total: rawResult.total,
       completed: 0,
       skipped: rawResult.skipped,
-      failed: 0,
+      failed: rawResult.failed,
       totalElapsedMs: 0,
       results: [],
       inboxTotal: 0,
@@ -173,11 +177,12 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     });
 
     return {
-      success: true,
+      mode,
+      success: rawResult.failed === 0,
       total: rawResult.total,
       completed: 0,
       skipped: rawResult.skipped,
-      failed: 0,
+      failed: rawResult.failed,
       durationMs: 0,
       report: mdReport,
       reportFile: null,
@@ -206,6 +211,9 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     ...(r.targetCommit ? { targetCommit: r.targetCommit } : {}),
     durationMs: r.durationMs ?? 0,
     ...(r.message ? { message: r.message } : {}),
+    ...(r.actionTaken !== undefined ? { actionTaken: r.actionTaken } : {}),
+    ...(r.checkpointSummary !== undefined ? { checkpointSummary: r.checkpointSummary } : {}),
+    ...(r.knowledgeChanges !== undefined ? { knowledgeChanges: r.knowledgeChanges } : {}),
   }));
 
   const inboxResults = (rawResult.inboxResults ?? []).map((c) => ({
@@ -218,6 +226,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
   }));
 
   return {
+    mode,
     success: rawResult.failed === 0 && (rawResult.inboxFailed ?? 0) === 0,
     total: rawResult.total,
     completed: rawResult.completed,

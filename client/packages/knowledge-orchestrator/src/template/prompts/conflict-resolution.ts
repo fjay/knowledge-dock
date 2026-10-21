@@ -1,3 +1,5 @@
+import { buildKnowledgeHandoffInstructions } from "./knowledge-handoff.ts";
+
 /**
  * 构造无人值守单代码仓合并冲突自主消解指导语模版
  */
@@ -45,12 +47,20 @@ export function buildConflictResolutionPrompt(data: any): string {
     `- 提交前必须执行工作区状态审查，确认所有冲突文件均已暂存或已解决：`,
     `  - ad run workspace/bash.exec --profile skm -- command="git status" cwd="${repoPath}"`,
     ``,
-    `## 最终交付与推进检查点水位（绝对交付标志）`,
-    ``,
-    `- 冲突消解与断链修复完成后，调用发布动作完成合并提交与远端推送：`,
-    `  - ad run maintenance/maintenance.publish --profile skm -- path="${repoPath}" message="docs: resolve merge conflict and update knowledge for ${repo}"`,
-    `- 发布成功后必须显式推进检查点水位至最新提交（绝对交付标志）：`,
-    `  - ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="conflict_resolved" summary="自动消解分支合并冲突并同步知识文档"`,
+    ...(data.mode === "backfill" ? [] : buildKnowledgeHandoffInstructions()),
+    ...(data.mode === "backfill" ? [
+      `## 冲突消解后的补齐交接`,
+      ``,
+      `- 冲突消解只是前置步骤，继续执行下方的知识覆盖补齐任务；此时不得调用 maintenance.complete 提前结束。`,
+      `- 补齐与断链核验完成后，按下方交付步骤统一发布合并结果与知识改动，再生成本次完成记录。`,
+    ] : [
+      `## 最终交付与推进检查点水位（绝对交付标志）`,
+      ``,
+      `- 冲突消解与断链修复完成后，调用发布动作完成合并提交与远端推送：`,
+      `  - ad run maintenance/maintenance.publish --profile skm -- path="${repoPath}" message="docs: resolve merge conflict and update knowledge for ${repo}"`,
+      `- 发布成功后必须显式推进检查点水位至最新提交（绝对交付标志）：`,
+      `  - ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="conflict_resolved" summary="自动消解分支合并冲突并同步知识文档"`,
+    ]),
   ];
 
   return lines.join("\n");

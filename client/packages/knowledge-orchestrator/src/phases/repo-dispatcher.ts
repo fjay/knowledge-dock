@@ -89,6 +89,7 @@ export async function dispatchRepo(
   // 进入异步状态侦听循环
   let isFinished = false;
   let isTimedOut = false;
+  const handoff: Pick<RepoResult, "actionTaken" | "checkpointSummary" | "knowledgeChanges"> = {};
 
   while (!isFinished && !isTimedOut) {
     reportProgress();
@@ -102,7 +103,25 @@ export async function dispatchRepo(
 
     try {
       const currentStatus = await queryRemoteList(profile, repoItem.path, execFn, repoItem.branch);
-      if (isRepoCompleted(currentStatus, targetCommit, { dispatchedAt: repoStartTime })) {
+      if (isRepoCompleted(currentStatus, targetCommit, {
+        dispatchedAt: repoStartTime,
+        requireFreshCheckpoint: options.mode === "backfill",
+      })) {
+        const receipt = currentStatus.data || currentStatus;
+        // 只交接本次完成记录，旧服务端的提交匹配兜底不能证明摘要属于本轮。
+        const completedAt = Date.parse(receipt.checkpointUpdatedAt || "");
+        if (Number.isFinite(completedAt) && completedAt >= repoStartTime) {
+          if (typeof receipt.actionTaken === "string") handoff.actionTaken = receipt.actionTaken;
+          if (typeof receipt.checkpointSummary === "string") handoff.checkpointSummary = receipt.checkpointSummary;
+          if (Array.isArray(receipt.knowledgeChanges) && receipt.knowledgeChanges.every(
+            (item: any) => item && typeof item.path === "string" && item.path.trim().length > 0 &&
+              typeof item.summary === "string" && item.summary.trim().length > 0
+          )) {
+            handoff.knowledgeChanges = receipt.knowledgeChanges.map((item: any) => ({ path: item.path, summary: item.summary }));
+          } else if (receipt.knowledgeChanges !== undefined) {
+            writeLog(`[WARN] 仓库 ${repoName} 本次知识变更清单格式无效，系统层须核对文档后再聚合`);
+          }
+        }
         isFinished = true;
         break;
       }
@@ -121,6 +140,7 @@ export async function dispatchRepo(
       repoType,
       status: "completed",
       targetCommit,
+      ...handoff,
       durationMs,
       message: `检查点已成功推进至 ${targetCommit || "最新水位"}`,
     };

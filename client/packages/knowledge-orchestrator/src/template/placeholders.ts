@@ -18,6 +18,8 @@ export function buildInboxPlaceholders(candidate: any = {}, extraContext: any = 
   const prompt = buildInboxCandidatePrompt(candidate);
 
   return {
+    mode: "incremental",
+    systemScope: "full",
     candidateId: id,
     candidateTitle: title,
     candidateFilename: filename,
@@ -81,6 +83,8 @@ export function buildPlaceholders(item: any = {}, extraContext: any = {}): Recor
     commitsSummary = "无新增提交";
   }
 
+  const mode = extraContext.mode || item.mode || "incremental";
+  const systemScope = extraContext.systemScope || item.systemScope || "full";
   const codePhaseSummary = extraContext.codePhaseSummary || "";
   const isConflict = Boolean(item.isConflict || extraContext.isConflict);
   const conflictFiles = item.conflictFiles || extraContext.conflictFiles || [];
@@ -90,6 +94,8 @@ export function buildPlaceholders(item: any = {}, extraContext: any = {}): Recor
   const knowledgeBranch = item.knowledgeBranch || extraContext.knowledgeBranch || "docs";
 
   const prompt = buildPrompt({
+    mode,
+    systemScope,
     repo,
     path: repoPath,
     branch,
@@ -108,6 +114,8 @@ export function buildPlaceholders(item: any = {}, extraContext: any = {}): Recor
   });
 
   return {
+    mode,
+    systemScope,
     repo,
     path: repoPath,
     branch,

@@ -262,7 +262,11 @@ describe("orchestrator.pipeline", () => {
     assert.equal(dispatchedCommands.length, 2);
     assert.ok(dispatchedCommands[0].includes("order-service"));
     assert.ok(dispatchedCommands[1].includes("system-knowledge"));
-    assert.ok(dispatchedCommands[1].includes("前序已完成巡检且发生更新的代码仓"));
+    assert.ok(dispatchedCommands[1].includes("前序已完成知识维护的代码仓（共 1 个，仅包含本次成功任务）"));
+    assert.ok(dispatchedCommands[1].includes("仓库：order-service；路径：/srv/workspace/order-service；检查点：2222222"));
+    assert.ok(dispatchedCommands[1].includes("知识目录：/srv/workspace/order-service/docs/knowledge/"));
+    assert.ok(dispatchedCommands[1].includes("本次主题摘要：未回传，须读取该仓知识索引与文档核验"));
+    assert.ok(dispatchedCommands[1].includes("未回传清单，不能据此认定无改动"));
   });
 
   it("报告输出与落盘支持：生成 Markdown 格式报告并成功写入指定文件", async () => {

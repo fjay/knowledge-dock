@@ -1,7 +1,13 @@
+import { buildBackfillInstructions } from "./backfill.ts";
+import { buildRelatedSystemKnowledgePrompt } from "./system-related.ts";
+
 /**
  * 构造针对系统知识库的全局聚合维护指导语模版
  */
 export function buildSystemKnowledgePrompt(data: any): string {
+  if (data.mode === "backfill" && data.systemScope === "related") {
+    return buildRelatedSystemKnowledgePrompt(data);
+  }
   const repo = data.repo || "system-knowledge";
   const repoPath = data.path || "/srv/workspace/system-knowledge";
   const branch = data.branch || "master";
@@ -14,7 +20,7 @@ export function buildSystemKnowledgePrompt(data: any): string {
   const codePhaseSummary = data.codePhaseSummary || "无前序代码仓巡检记录";
 
   const lines = [
-    `# 系统知识库全局聚合维护指导`,
+    data.mode === "backfill" ? `# 系统知识库覆盖补齐任务指导` : `# 系统知识库全局聚合维护指导`,
     ``,
     `请针对系统知识库 ${repo}（${repoPath}）执行跨仓领域聚合、新领域发现、端到端流程与全局资产核验闭环。`,
     ``,
@@ -46,6 +52,7 @@ export function buildSystemKnowledgePrompt(data: any): string {
     ``,
     `请挂载并严格遵循 skills/knowledge-maintenance-orchestrator/SKILL.md 与 skills/project-knowledge-maintainer 技能规范（重点参考 references/system-knowledge-workflow.md、references/cross-repository.md、references/layout.md 与 references/maintenance.md）。`,
     ``,
+    ...buildBackfillInstructions({ ...data, path: repoPath, repoType: "system_knowledge" }),
     `## 主智能体统筹定位与子代理协同架构`,
     ``,
     `- 主智能体角色定位：作为系统层知识维护总控中枢，主智能体负责统筹决策、自主规划、子代理调度委派与最终门禁验收，绝不亲自盲目编辑文件。全流程严格遵循全自动自闭环执行铁律，严禁挂起终端等待人工干预。`,
@@ -108,7 +115,7 @@ export function buildSystemKnowledgePrompt(data: any): string {
     `    - 有文档改动时调用：ad run maintenance/maintenance.publish --profile skm -- path="${repoPath}" repoType="system_knowledge" message="docs(system): sync domain knowledge and cross-service flows"`,
     `  - 无论文档是否修改，最后必须调用检查点推进动作（绝对交付标志）：`,
     `    - 文档有更新：publish 提交后会在 ${branch} 分支生成全新提交，必须将 publish 出参返回的 commit 哈希（或当前 HEAD）传入 commit 参数：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="<publish出参commit哈希或当前HEAD>" actionTaken="docs_updated" summary="<系统知识更新说明>"`,
-    `    - 文档无需更新：未产生新提交时沿用目标检查点：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="no_change_needed" summary="<系统级跨仓契约与全局领域未失效，无需更新>"`,
+    `    - 文档无需更新：未产生新提交时沿用目标检查点：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="no_change_needed" summary="${data.mode === "backfill" ? "<源码覆盖核验范围、依据与剩余缺口，无可补内容>" : "<系统级跨仓契约与全局领域未失效，无需更新>"}"`,
   ];
 
   return lines.join("\n");

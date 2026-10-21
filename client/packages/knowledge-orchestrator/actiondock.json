@@ -15,10 +15,17 @@
   "actions": {
     "orchestrator.pipeline": {
       "entry": "actions/pipeline.ts",
-      "description": "Schedule and drive end-to-end three-phase knowledge maintenance pipeline across code repositories, system knowledge base, and knowledge inbox.",
+      "description": "调度知识维护流水线，支持默认增量维护和指定仓库范围的源码覆盖补齐；补齐模式跳过待审池。",
       "inputSchema": {
         "type": "object",
         "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["incremental", "backfill"],
+            "description": "维护模式：incremental 按代码变更维护；backfill 补齐代码仓后自动向系统仓交接本次文档变更并定向聚合，始终跳过 Inbox；仅指定系统仓时执行系统层全景补齐",
+            "default": "incremental",
+            "examples": ["incremental", "backfill"]
+          },
           "profile": {
             "type": "string",
             "description": "ActionDock client remote profile identifier used for remote inspection and dispatch (defaults to 'skm')",
@@ -64,7 +71,7 @@
           },
           "only": {
             "type": "string",
-            "description": "Filter to only process specified repository or comma-separated list of repositories (e.g. 'order-service,payment-service')",
+            "description": "逗号分隔的精确仓库名，忽略大小写与首尾空白。backfill 时限定单仓补齐范围，但不切断后续系统聚合；仅指定系统仓时执行全景补齐。未命中或不可处理的补齐目标报错，省略则处理全部受管仓库",
             "examples": [
               "order-service",
               "order-service,payment-service"
@@ -72,7 +79,7 @@
           },
           "skipSystemKnowledge": {
             "type": "boolean",
-            "description": "Skip second-phase global aggregation maintenance on system knowledge base (default: false)",
+            "description": "跳过系统知识库阶段（默认 false）；代码仓补齐后默认自动定向聚合，只有显式设为 true 才只补单仓",
             "default": false,
             "examples": [
               false,
@@ -99,7 +106,7 @@
           },
           "skipInbox": {
             "type": "boolean",
-            "description": "Skip third-phase knowledge inbox pending candidate inspection and review (default: false)",
+            "description": "跳过第三阶段 Knowledge Inbox 待审池核验（默认 false）；backfill 模式始终跳过此阶段",
             "default": false,
             "examples": [
               false,
@@ -144,6 +151,11 @@
           "inboxResults"
         ],
         "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["incremental", "backfill"],
+            "description": "本次维护模式"
+          },
           "success": {
             "type": "boolean",
             "description": "Whether the pipeline execution succeeded without any repository failures"
@@ -228,6 +240,27 @@
                 "targetCommit": {
                   "type": "string",
                   "description": "Target HEAD commit hash"
+                },
+                "actionTaken": {
+                  "type": "string",
+                  "description": "本次完成记录的处理决议"
+                },
+                "checkpointSummary": {
+                  "type": "string",
+                  "description": "本次知识维护的主题摘要"
+                },
+                "knowledgeChanges": {
+                  "type": "array",
+                  "description": "本次知识文档变更交接；空数组表示已核验没有文档改动，缺省表示未回传",
+                  "items": {
+                    "type": "object",
+                    "required": ["path", "summary"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": { "type": "string", "description": "文档仓库相对路径" },
+                      "summary": { "type": "string", "description": "该文档的主题与变更说明" }
+                    }
+                  }
                 },
                 "durationMs": {
                   "type": "integer",

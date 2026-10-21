@@ -12,6 +12,7 @@ import {
 } from "../src/repo-utils.ts";
 import { MaintenanceError } from "../src/errors.ts";
 import { DEFAULT_GIT_CLONE_TIMEOUT_MS } from "../src/limits.ts";
+import { readCheckpointMetadata, type KnowledgeChange } from "../src/checkpoint-metadata.ts";
 
 export type Input = ActionInput<"maintenance.list">;
 export type Output = ActionOutput<"maintenance.list">;
@@ -35,6 +36,8 @@ type SingleRepoScanResult = {
   repoType?: "code" | "system_knowledge" | "inbox";
   checkpointUpdatedAt?: string | null;
   actionTaken?: string | null;
+  checkpointSummary?: string | null;
+  knowledgeChanges?: KnowledgeChange[];
   hasChanges: boolean;
   from?: string | null;
   to?: string;
@@ -209,6 +212,7 @@ async function scanSingleRepo(
       savedState && typeof savedState.updatedAt === "string" ? savedState.updatedAt : null;
     const actionTaken: string | null =
       savedState && typeof savedState.actionTaken === "string" ? savedState.actionTaken : null;
+    const metadata = readCheckpointMetadata(savedState, ctx.log, repoName);
 
     ctx.log.info("Resolved repository checkpoint and target commit", {
       repo: repoName,
@@ -240,6 +244,7 @@ async function scanSingleRepo(
         repoType,
         checkpointUpdatedAt,
         actionTaken,
+        ...metadata,
         from: null,
         to: toCommit,
         commitCount: totalCommits,
@@ -261,6 +266,7 @@ async function scanSingleRepo(
         repoType,
         checkpointUpdatedAt,
         actionTaken,
+        ...metadata,
         from: fromCommit,
         to: toCommit,
         commitCount: 0,
@@ -317,6 +323,7 @@ async function scanSingleRepo(
       repoType,
       checkpointUpdatedAt,
       actionTaken,
+      ...metadata,
       from: fromCommit,
       to: toCommit,
       commitCount,

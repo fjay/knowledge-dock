@@ -504,6 +504,34 @@
             ],
             "description": "Action taken at last checkpoint completion"
           },
+          "checkpointSummary": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "null" }
+            ],
+            "description": "Summary from the latest saved checkpoint, or null if unavailable"
+          },
+          "knowledgeChanges": {
+            "type": "array",
+            "description": "Knowledge documents created, modified or deleted in the latest checkpoint. Omitted means unknown; [] means verified no document changes.",
+            "items": {
+              "type": "object",
+              "required": ["path", "summary"],
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Safe repository-relative knowledge document path using forward slashes"
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Non-empty topic or change description for this document"
+                }
+              }
+            }
+          },
           "branch": {
             "type": "string",
             "description": "Inspected branch name"
@@ -685,6 +713,34 @@
                     "null"
                   ],
                   "description": "Action taken at last checkpoint completion"
+                },
+                "checkpointSummary": {
+                  "anyOf": [
+                    { "type": "string" },
+                    { "type": "null" }
+                  ],
+                  "description": "Summary from the latest saved checkpoint, or null if unavailable"
+                },
+                "knowledgeChanges": {
+                  "type": "array",
+                  "description": "Knowledge documents created, modified or deleted in the latest checkpoint. Omitted means unknown; [] means verified no document changes.",
+                  "items": {
+                    "type": "object",
+                    "required": ["path", "summary"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Safe repository-relative knowledge document path using forward slashes"
+                      },
+                      "summary": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "Non-empty topic or change description for this document"
+                      }
+                    }
+                  }
                 },
                 "branch": {
                   "type": "string",
@@ -1005,6 +1061,31 @@
               "Updated flow doc for budget limit check",
               "Reviewed auth changes, no knowledge impact"
             ]
+          },
+          "knowledgeChanges": {
+            "type": "array",
+            "description": "本次新建、修改或删除的知识文档；缺省表示未回传，空数组表示已核验没有文档改动，不继承上次检查点清单",
+            "examples": [
+              [{ "path": "docs/knowledge/flow/flow-order.md", "summary": "补齐订单失败恢复与下游交接" }],
+              []
+            ],
+            "items": {
+              "type": "object",
+              "required": ["path", "summary"],
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Safe repository-relative knowledge document path using forward slashes"
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Non-empty topic or change description for this document"
+                }
+              }
+            }
           }
         }
       },
@@ -1050,6 +1131,27 @@
           "summary": {
             "type": "string",
             "description": "Summary notes recorded for this maintenance cycle"
+          },
+          "knowledgeChanges": {
+            "type": "array",
+            "description": "Knowledge document changes recorded for this cycle; omitted if not provided, [] if verified no document changes",
+            "items": {
+              "type": "object",
+              "required": ["path", "summary"],
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Safe repository-relative knowledge document path using forward slashes"
+                },
+                "summary": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Non-empty topic or change description for this document"
+                }
+              }
+            }
           },
           "updatedAt": {
             "type": "string",

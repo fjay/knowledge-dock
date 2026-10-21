@@ -3,7 +3,7 @@ import { buildPlaceholders } from "../template/placeholders.ts";
 import { defaultExec } from "../client/runner.ts";
 import { syncRemoteRepo, completeRemoteRepo } from "../client/remote.ts";
 import { dispatchRepo, type RepoDispatchContext } from "./repo-dispatcher.ts";
-import type { PipelineOptions, PipelineHooks, RepoResult } from "../types.ts";
+import type { PipelineOptions, PipelineHooks, RepoResult, SystemKnowledgeScope } from "../types.ts";
 
 export interface SystemPhaseResult {
   results: RepoResult[];
@@ -24,6 +24,7 @@ export async function runSystemKnowledgePhase(
     totalRepos: number;
     codePhaseSummary: string;
     updatedCodeReposCount: number;
+    systemScope?: SystemKnowledgeScope;
     getCurrentCounts: () => { skipped: number; completed: number; failed: number };
     onResult: (result: RepoResult) => void;
     writeLog: (msg: string) => void;
@@ -36,11 +37,13 @@ export async function runSystemKnowledgePhase(
     totalRepos,
     codePhaseSummary,
     updatedCodeReposCount,
+    systemScope = "full",
     getCurrentCounts,
     onResult,
     writeLog,
   } = context;
 
+  const isBackfill = options.mode === "backfill";
   const profile = options.profile || "skm";
   const { execFn = defaultExec, nowFn = Date.now } = hooks;
 
@@ -76,6 +79,23 @@ export async function runSystemKnowledgePhase(
       continue;
     }
 
+    if (isBackfill && systemScope === "related" && updatedCodeReposCount === 0) {
+      skippedCount++;
+      const res: RepoResult = {
+        repo: repoName,
+        path: repoItem.path,
+        repoType: "system_knowledge",
+        status: "skipped",
+        targetCommit: repoItem.to || repoItem.from || "",
+        durationMs: 0,
+        message: "本次没有成功完成补齐的代码仓，跳过定向系统聚合，不将失败仓视为已更新",
+      };
+      writeLog(`[SKIP] 系统知识库 ${repoName}：${res.message}`);
+      results.push(res);
+      onResult(res);
+      continue;
+    }
+
     let repoHasChanges = Boolean(
       repoItem.hasChanges ||
       repoItem.status === "initial" ||
@@ -83,7 +103,7 @@ export async function runSystemKnowledgePhase(
     );
 
     // 前序代码仓无更新且扫描未检出变动时，若显式开启 syncSystemKnowledge 则主动探测远端最新提交
-    if (updatedCodeReposCount === 0 && !repoHasChanges && options.syncSystemKnowledge && !options.only) {
+    if (!isBackfill && updatedCodeReposCount === 0 && !repoHasChanges && options.syncSystemKnowledge && !options.only) {
       writeLog(`[SYNC-PROBE] 正在探测系统知识库 ${repoName} 远端是否存在未同步的新提交...`);
       try {
         const probeRes = await syncRemoteRepo(profile, repoItem.path, execFn);
@@ -106,7 +126,8 @@ export async function runSystemKnowledgePhase(
       !repoHasChanges &&
       updatedCodeReposCount === 0 &&
       !options.only &&
-      !options.forceSystemKnowledge
+      !options.forceSystemKnowledge &&
+      !isBackfill
     ) {
       skippedCount++;
       writeLog(`[SKIP] 系统知识库 ${repoName} 前序代码仓无更新且基线已对齐，跳过`);
@@ -128,7 +149,8 @@ export async function runSystemKnowledgePhase(
     if (
       updatedCodeReposCount === 0 &&
       repoHasChanges &&
-      !options.forceSystemKnowledge
+      !options.forceSystemKnowledge &&
+      !isBackfill
     ) {
       writeLog(`[SYNC] 系统知识库 ${repoName} 前序代码仓无更新，仅同步自身变动并推进检查点`);
       try {
@@ -176,8 +198,34 @@ export async function runSystemKnowledgePhase(
       continue;
     }
 
-    // 分支 3：前序代码仓有更新或开启了 forceSystemKnowledge -> 派发外部智能体执行全量跨仓聚合维护
-    const placeholders = buildPlaceholders(repoItem, { codePhaseSummary });
+    // 补齐模式先同步事实源，再派发覆盖调查，不能退化为仅同步检查点。
+    if (isBackfill) {
+      try {
+        const syncRes = await syncRemoteRepo(profile, repoItem.path, execFn);
+        if (syncRes.status === "error" || syncRes.status === "conflict" || syncRes.status === "dirty_worktree") {
+          throw new Error(syncRes.message || `同步异常状态: ${syncRes.status}`);
+        }
+        if (syncRes.currentCommit) repoItem.to = syncRes.currentCommit;
+      } catch (err: any) {
+        failedCount++;
+        const res: RepoResult = {
+          repo: repoName,
+          path: repoItem.path,
+          repoType: "system_knowledge",
+          status: "failed",
+          targetCommit: repoItem.to || repoItem.from || "",
+          durationMs: nowFn() - repoStartTime,
+          message: `系统知识库补齐前同步失败: ${err.message}`,
+        };
+        writeLog(`[ERROR] ${res.message}`);
+        results.push(res);
+        onResult(res);
+        continue;
+      }
+    }
+
+    // 分支 3：前序代码仓有更新、强制维护或覆盖补齐 -> 派发外部智能体。
+    const placeholders = buildPlaceholders(repoItem, { mode: options.mode ?? "incremental", systemScope, codePhaseSummary });
     const dispatchContext: RepoDispatchContext = {
       options,
       hooks,

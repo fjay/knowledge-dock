@@ -18,6 +18,12 @@ import type {
   PipelineSummary,
 } from "./types.ts";
 
+function resolvePipelineRepoType(item: any): "code" | "system_knowledge" | "inbox" {
+  if (["code", "system_knowledge", "inbox"].includes(item.repoType)) return item.repoType;
+  const name = `${item.repo || ""} ${item.path || ""}`.toLowerCase();
+  return name.includes("system-knowledge") || name.includes("knowledge-system") ? "system_knowledge" : "code";
+}
+
 // 统一门面导出所有细粒度子模块与类型定义，供 actions/pipeline.ts 与测试套件无缝使用
 export * from "./types.ts";
 export * from "./ui/format.ts";
@@ -51,6 +57,12 @@ export async function runPipeline(
     nowFn = Date.now,
   } = hooks;
 
+  const mode = options.mode ?? "incremental";
+  if (mode !== "incremental" && mode !== "backfill") {
+    throw new Error(`未知维护模式：${mode}`);
+  }
+  const isBackfill = mode === "backfill";
+  const skipInbox = isBackfill || (options.skipInbox ?? false);
   const profile = options.profile || "skm";
   const startTime = nowFn();
 
@@ -68,7 +80,7 @@ export async function runPipeline(
     }
   };
 
-  writeLog(`开始执行知识维护流水线 (profile=${profile})`);
+  writeLog(`开始执行知识维护流水线 (profile=${profile}, mode=${mode})`);
 
   // 1. 扫描远端全量或单仓状态
   writeLog("正在扫描远端受管仓库状态与检查点基线...");
@@ -81,17 +93,19 @@ export async function runPipeline(
     allRepos = [scanData];
   }
 
-  // 2. 按 --only 进行过滤
+  const scannedRepos = allRepos;
+
+  // 2. 按 only 限定单仓范围；补齐后的系统聚合保留完整扫描中的系统仓。
+  const onlySet = options.only != null
+    ? new Set(options.only.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean))
+    : null;
+  if (isBackfill && onlySet?.size === 0) {
+    throw new Error("补齐模式的 only 不能为空；省略 only 才表示全部受管仓库");
+  }
   if (options.only) {
-    const onlySet = new Set(
-      options.only
-        .split(",")
-        .map((s) => s.trim().toLowerCase())
-        .filter(Boolean)
-    );
     allRepos = allRepos.filter((item) => {
       const repoName = (item.repo || path.basename(item.path || "")).toLowerCase();
-      return onlySet.has(repoName);
+      return onlySet!.has(repoName);
     });
   }
 
@@ -105,16 +119,7 @@ export async function runPipeline(
       continue;
     }
 
-    const repoName = item.repo || (item.path ? path.basename(item.path) : "");
-    const rawType = item.repoType || "";
-    const repoType =
-      rawType === "system_knowledge" || rawType === "code"
-        ? rawType
-        : (repoName.toLowerCase().includes("system-knowledge") ||
-           repoName.toLowerCase().includes("knowledge-system") ||
-           (item.path && (item.path.toLowerCase().includes("system-knowledge") || item.path.toLowerCase().includes("knowledge-system")))
-            ? "system_knowledge"
-            : "code");
+    const repoType = resolvePipelineRepoType(item);
 
     const enrichedItem = { ...item, repoType };
 
@@ -127,8 +132,33 @@ export async function runPipeline(
     }
   }
 
-  // 确保按阶段顺序执行：先单仓代码巡检，后全局系统知识聚合
+  const systemScope = isBackfill && codeRepos.length > 0 ? "related" : "full";
+  if (isBackfill && codeRepos.length > 0 && !options.skipSystemKnowledge) {
+    for (const item of scannedRepos) {
+      if (resolvePipelineRepoType(item) === "system_knowledge" && !systemRepos.some((repo) => repo.path === item.path)) {
+        systemRepos.push({ ...item, repoType: "system_knowledge" });
+      }
+    }
+    if (systemRepos.length === 0) {
+      throw new Error("补齐后需要系统知识库聚合，但未发现受管系统知识仓；仅补单仓请显式设置 skipSystemKnowledge=true");
+    }
+  }
+
+  // 确保按阶段顺序执行：先单仓代码巡检，后系统知识聚合。
   const orderedRepos = [...codeRepos, ...systemRepos];
+  if (isBackfill) {
+    const selectedNames = new Set(orderedRepos.map((item) =>
+      (item.repo || path.basename(item.path || "")).toLowerCase()
+    ));
+    const unmatched = [...(onlySet ?? [])].filter((name) => !selectedNames.has(name));
+    if (unmatched.length > 0) {
+      throw new Error(`补齐范围包含未匹配或不可处理的仓库：${unmatched.join(", ")}`);
+    }
+    if (orderedRepos.length === 0) {
+      throw new Error("补齐范围内没有可处理的代码仓或系统知识仓");
+    }
+    writeLog(`[BACKFILL] 执行仓库范围：${[...selectedNames].join(", ")}；系统阶段：${options.skipSystemKnowledge ? "显式跳过" : systemScope === "related" ? "本次单仓知识定向聚合" : "系统层全景补齐"}；跳过 Inbox`);
+  }
 
   let skippedCount = 0;
   let completedCount = 0;
@@ -142,7 +172,7 @@ export async function runPipeline(
     for (const item of codeRepos) {
       if (item.status === "error") {
         failedCount++;
-      } else if (!item.hasChanges && item.status !== "initial" && item.status !== "changed") {
+      } else if (!isBackfill && !item.hasChanges && item.status !== "initial" && item.status !== "changed") {
         skippedCount++;
       } else {
         pendingCodeRepos.push(item);
@@ -150,7 +180,7 @@ export async function runPipeline(
     }
 
     for (const item of pendingCodeRepos) {
-      const placeholders = buildPlaceholders(item);
+      const placeholders = buildPlaceholders(item, { mode });
       const renderedCmd = options.dispatchCmd
         ? renderTemplate(options.dispatchCmd, placeholders, { escapeQuotes: true })
         : `[未指定 --dispatch-cmd] 目标仓库: ${placeholders.repo}, 待核验提交数: ${placeholders.commitCount}`;
@@ -165,16 +195,19 @@ export async function runPipeline(
 
     const codePhaseSummaryForDryRun =
       pendingCodeRepos.length > 0
-        ? `预演阶段待更新代码仓共 ${pendingCodeRepos.length} 个：` + pendingCodeRepos.map((r) => r.repo || path.basename(r.path || "")).join(", ")
-        : "所有代码仓均无变更。";
+        ? `预演阶段待维护代码仓共 ${pendingCodeRepos.length} 个：\n` + pendingCodeRepos.map((r) =>
+          `- ${r.repo || path.basename(r.path || "")}；路径：${r.path}；知识目录：${r.path}/docs/knowledge/`
+        ).join("\n") + "\n本次文档清单与主题摘要将在单仓实际完成后注入，预演不复用历史交接记录。"
+        : "本次没有待派发的代码仓。";
 
     for (const item of systemRepos) {
       if (item.status === "error") {
         failedCount++;
-      } else if (!item.hasChanges && item.status !== "initial" && item.status !== "changed" && pendingCodeRepos.length === 0 && !options.only && !options.forceSystemKnowledge) {
+      } else if ((isBackfill && systemScope === "related" && pendingCodeRepos.length === 0) ||
+        (!isBackfill && !item.hasChanges && item.status !== "initial" && item.status !== "changed" && pendingCodeRepos.length === 0 && !options.only && !options.forceSystemKnowledge)) {
         skippedCount++;
       } else {
-        const placeholders = buildPlaceholders(item, { codePhaseSummary: codePhaseSummaryForDryRun });
+        const placeholders = buildPlaceholders(item, { mode, systemScope, codePhaseSummary: codePhaseSummaryForDryRun });
         const renderedCmd = options.dispatchCmd
           ? renderTemplate(options.dispatchCmd, placeholders, { escapeQuotes: true })
           : `[未指定 --dispatch-cmd] 目标系统仓: ${placeholders.repo}`;
@@ -189,15 +222,17 @@ export async function runPipeline(
     }
 
     return {
+      mode,
       dryRun: true,
       total: orderedRepos.length,
       skipped: skippedCount,
       pending: dryRunOutput.length,
+      failed: failedCount,
       dryRunOutput,
       inboxTotal: 0,
       inboxCompleted: 0,
       inboxFailed: 0,
-      inboxSkipped: options.skipInbox ?? false,
+      inboxSkipped: skipInbox,
       inboxResults: [],
     };
   }
@@ -243,6 +278,7 @@ export async function runPipeline(
     hooks,
     startTime,
     totalRepos: orderedRepos.length,
+    systemScope,
     codePhaseSummary: codePhaseResult.codePhaseSummary,
     updatedCodeReposCount: codePhaseResult.updatedCodeReposCount,
     getCurrentCounts,
@@ -256,7 +292,7 @@ export async function runPipeline(
   const inboxRepoItem = allRepos.find((item) => item.repoType === "inbox");
   const inboxPath = inboxRepoItem?.path || "/srv/knowledge-inbox";
 
-  const inboxSummary = await runInboxPhase(options, hooks, {
+  const inboxSummary = await runInboxPhase({ ...options, skipInbox }, hooks, {
     startTime,
     codeReposCount: codeRepos.length,
     systemReposCount: systemRepos.length,
@@ -270,6 +306,7 @@ export async function runPipeline(
   );
 
   const summary = {
+    mode,
     profile,
     total: orderedRepos.length,
     completed: completedCount,

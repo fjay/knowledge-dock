@@ -13,7 +13,10 @@ export { buildConflictResolutionPrompt } from "./conflict-resolution.ts";
  */
 export function buildPrompt(data: any): string {
   if (data?.isConflict) {
-    return buildConflictResolutionPrompt(data);
+    const conflictPrompt = buildConflictResolutionPrompt(data);
+    return data.mode === "backfill"
+      ? `${conflictPrompt}\n\n${buildCodeRepoPrompt(data)}`
+      : conflictPrompt;
   }
   if (data?.repoType === "system_knowledge") {
     return buildSystemKnowledgePrompt(data);

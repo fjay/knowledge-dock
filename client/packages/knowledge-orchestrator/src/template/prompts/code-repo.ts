@@ -1,3 +1,6 @@
+import { buildBackfillInstructions } from "./backfill.ts";
+import { buildKnowledgeHandoffInstructions } from "./knowledge-handoff.ts";
+
 /**
  * 构造开箱即用的专业单代码仓维护指导语模版
  */
@@ -11,9 +14,10 @@ export function buildCodeRepoPrompt(data: any): string {
   const changedFilesCount = data.changedFilesCount ?? 0;
   const commitsSummary = data.commitsSummary || "无新增提交";
   const diffSummary = data.diffSummary || "无文件变动";
+  const isBackfill = data.mode === "backfill";
 
   const lines = [
-    `# 知识维护单仓任务指导`,
+    isBackfill ? `# 单仓知识覆盖补齐任务指导` : `# 知识维护单仓任务指导`,
     ``,
     `请针对目标仓库 ${repo} 执行单仓全生命周期知识维护与核验闭环。`,
     ``,
@@ -40,6 +44,7 @@ export function buildCodeRepoPrompt(data: any): string {
     ``,
     `请挂载并严格遵循 skills/knowledge-maintenance-orchestrator/SKILL.md 与 skills/project-knowledge-maintainer 技能规范。`,
     ``,
+    ...buildBackfillInstructions({ ...data, path: repoPath, repoType: "code" }),
     `## 工作区拓扑与绝对路径清单`,
     ``,
     `- 目标仓库：${repoPath}`,
@@ -69,7 +74,9 @@ export function buildCodeRepoPrompt(data: any): string {
     `  - 契约：文档记载的接口出入参、事件、队列、配置键语义是否变化？`,
     `  - 定位：文档给出的文件、类、方法是否改名或移动？（行号漂移不算）`,
     `  - 缺失：是否新增了该文档主题内读者需要的事实（新入口、新分支、新失败路径、新公共规则）？`,
-    `- 若存量骨架完备且四问均为“否”（仅为代码重构或优化，业务未变），严禁改动文档，直接判定为无需更新（no_change_needed）。`,
+    isBackfill
+      ? `- 补齐模式下，四问只用于核对已写知识；还需独立调查未文档化主题，不能据此跳过补齐。`
+      : `- 若存量骨架完备且四问均为“否”（仅为代码重构或优化，业务未变），严禁改动文档，直接判定为无需更新（no_change_needed）。`,
     ``,
     `## 特权受控工具自省契约`,
     ``,
@@ -87,13 +94,14 @@ export function buildCodeRepoPrompt(data: any): string {
     `  - 核验差异：ad run workspace/bash.exec --profile skm -- command="git diff" cwd="${repoPath}"`,
     `  - 误改回滚：若误触业务源码立即执行 ad run workspace/bash.exec --profile skm -- command="git restore ." cwd="${repoPath}" 回滚丢弃修改。`,
     ``,
+    ...buildKnowledgeHandoffInstructions(),
     `## 最终交付与推进检查点水位（绝对交付标志）`,
     ``,
     `- 有文档改动时调用：`,
     `  - ad run maintenance/maintenance.publish --profile skm -- path="${repoPath}" message="docs: update knowledge for ${repo}"`,
     `- 无论文档是否修改，最后必须调用检查点推进动作（绝对交付标志）：`,
     `  - 文档有更新：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="docs_updated" summary="<更新说明>"`,
-    `  - 文档无需更新：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="no_change_needed" summary="<代码重构或优化，业务未变，无需更新文档>"`,
+    `  - 文档无需更新：ad run maintenance/maintenance.complete --profile skm -- path="${repoPath}" commit="${to}" actionTaken="no_change_needed" summary="${isBackfill ? "<源码覆盖核验范围、依据与剩余缺口，无可补内容>" : "<代码重构或优化，业务未变，无需更新文档>"}"`,
   ];
 
   return lines.join("\n");

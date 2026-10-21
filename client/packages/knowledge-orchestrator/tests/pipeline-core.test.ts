@@ -288,7 +288,15 @@ test("Pipeline Runner - 系统知识库全局维护提示词生成 (buildSystemK
     changedFilesCount: 2,
     commitsSummary: "2222222 docs(system): sync payment domain flow",
     diffSummary: "2 files changed, 10 insertions(+)",
-    codePhaseSummary: "前序已完成巡检且发生更新的代码仓（共 1 个）：\n- order-service：已推进检查点至 2222222",
+    codePhaseSummary: [
+      "前序已完成知识维护的代码仓（共 1 个，仅包含本次成功任务）：",
+      "- 仓库：order-service；路径：/srv/workspace/order-service；检查点：2222222",
+      "  - 知识目录：/srv/workspace/order-service/docs/knowledge/",
+      "  - 本次处置：docs_updated",
+      "  - 本次主题摘要：补齐订单失败恢复",
+      "  - 本次文档变更：",
+      "    - docs/knowledge/flow/flow-order.md：新增失败恢复与下游交接",
+    ].join("\n"),
   };
 
   const prompt = buildSystemKnowledgePrompt(sysPromptData);
@@ -299,7 +307,9 @@ test("Pipeline Runner - 系统知识库全局维护提示词生成 (buildSystemK
     assert.ok(prompt.includes("/srv/workspace/system-knowledge"));
     assert.ok(prompt.includes("master"));
     assert.ok(prompt.includes("前序代码仓巡检摘要"));
-    assert.ok(prompt.includes("order-service：已推进检查点至 2222222"));
+    assert.ok(prompt.includes(sysPromptData.codePhaseSummary));
+    assert.ok(prompt.includes("仓库：order-service；路径：/srv/workspace/order-service；检查点：2222222"));
+    assert.ok(prompt.includes("docs/knowledge/flow/flow-order.md：新增失败恢复与下游交接"));
     assert.ok(prompt.includes("2222222 docs(system): sync payment domain flow"));
   });
 
@@ -1256,7 +1266,11 @@ test("Pipeline Runner - 两阶段调度（单仓巡检与系统知识库全局�
     const sysCmd = dispatchedCmds[1]!;
     assert.ok(sysCmd.includes("system-knowledge"));
     assert.ok(sysCmd.includes("系统知识库全局聚合维护指导"));
-    assert.ok(sysCmd.includes("order-service：已推进检查点至 222"));
+    assert.ok(sysCmd.includes("前序已完成知识维护的代码仓（共 1 个，仅包含本次成功任务）"));
+    assert.ok(sysCmd.includes("仓库：order-service；路径：/srv/workspace/order-service；检查点：222"));
+    assert.ok(sysCmd.includes("知识目录：/srv/workspace/order-service/docs/knowledge/"));
+    assert.ok(sysCmd.includes("本次主题摘要：未回传，须读取该仓知识索引与文档核验"));
+    assert.ok(sysCmd.includes("未回传清单，不能据此认定无改动"));
   });
 
   await t.test("前序代码仓均无变更且系统知识仓无变更时，系统知识仓自动跳过", async () => {

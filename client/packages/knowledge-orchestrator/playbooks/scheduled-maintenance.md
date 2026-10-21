@@ -22,6 +22,24 @@
 - 第二阶段：系统知识库全局跨仓聚合核验。在所有代码仓完成核验后，汇总前序代码仓的更新事实，触发系统知识库的新领域识别与跨仓端到端流程聚合。若前序代码仓均无变更且系统知识库基线已对齐，自动跳过系统层维护。
 - 第三阶段：排障经验待审池串行核验与消费。拉取全局待审候选文档清单，单实例串行派发维护智能体进行交叉事实核验与知识提炼，轮询待审池移出状态直至消费闭环。
 
+## 源码覆盖补齐模式
+
+`mode` 支持 `incremental`（默认）与 `backfill`。上述无变更跳过规则仅适用于增量模式；补齐模式优先于无变更跳过和已有文档 `scope` 门槛。
+
+- 范围：复用 `only="repo-a,repo-b"`，仓库名精确匹配，忽略大小写和前后空白；不提供则处理所有代码仓和系统知识仓。`only` 未命中或含不能处理的仓库时报错，错误仓仍失败，禁止静默漏执行。`skipSystemKnowledge` 仍有效。
+- 调度：指定代码仓即使无代码变更、检查点已对齐也同步派发；单仓成功后自动向受管系统仓交接本次文档变更与主题，执行定向聚合，`only` 不切断此联动。显式 `skipSystemKnowledge:=true` 才仅补单仓；未配置系统仓且未跳过时报错。始终跳过 Inbox。
+- 系统范围：有代码仓任务时，仅围绕成功仓的本次主题聚合，不扫描无关领域；全部代码仓失败则跳过定向聚合。仅指定系统仓时才执行系统层全景补齐。
+- 维护：从当前源码真实入口、注册表、公共导出与测试发现主题，不限 Git diff 或已有 scope；对照文档补充首次遗漏的流程、分支、契约、规则和恢复路径。保留人工内容及既有有效知识，不按篇数凑数、不全量重写。
+- 边界：单仓只写本仓 `docs/knowledge/`，系统仓只写目标系统仓，其他仓可只读核验。
+- 完成：需要新的 `checkpointUpdatedAt` 本次完成记录才判成功，旧同 commit 记录不能提前结束。单仓在 `maintenance.complete` 中回传主题 `summary` 与 `knowledgeChanges` 文档清单（每项 `path`、`summary`）；确无改动显式传空数组。调度器从最新完成记录读取并注入系统代理，缺失清单需定向核验，不能解释为无改动。本模式不是自动完整性验收器，不保证全仓知识完整。
+
+多仓补齐预演（正式执行时去掉 `dryRun:=true`）：
+
+```bash
+ad run orchestrator.pipeline -- profile="skm" mode="backfill" only="repo-a,repo-b" dryRun:=true \
+  dispatchCmd='ad run my-agent.dispatch -- repo="{{repo}}" prompt="{{prompt}}"'
+```
+
 ## 流水线动作编排与调用
 
 通过 `orchestrator.pipeline` 一键触发三阶段全自动流水线。
@@ -34,11 +52,11 @@
   - 仅扫描远端变更并渲染派发命令，不实际触发外部任务与检查点轮询。
   - 调用示例：
     ```bash
-    ad run orchestrator.pipeline -- profile="skm" dryRun:=true
+    ad run orchestrator.pipeline -- profile="skm" dryRun:=true dispatchCmd='ad run my-agent.dispatch -- repo="{{repo}}" prompt="{{prompt}}"'
     ```
 - 正式流水线执行：
   - 配置外部智能体派发命令模版，启动异步轮询与三阶段闭环驱动。
-  - 派发参数模版：支持 `{{repo}}`、`{{path}}`、`{{branch}}`、`{{from}}`、`{{to}}`、`{{commitCount}}`、`{{changedFilesCount}}`、`{{diffSummary}}`、`{{commitsSummary}}`、`{{codePhaseSummary}}`、`{{candidateId}}`、`{{candidateTitle}}`、`{{candidateFilename}}`、`{{candidatePath}}`、`{{candidateDomain}}` 与 `{{prompt}}` 占位符。
+  - 派发参数模版：支持 `{{mode}}`、`{{systemScope}}`、`{{repo}}`、`{{path}}`、`{{branch}}`、`{{from}}`、`{{to}}`、`{{commitCount}}`、`{{changedFilesCount}}`、`{{diffSummary}}`、`{{commitsSummary}}`、`{{codePhaseSummary}}`、`{{candidateId}}`、`{{candidateTitle}}`、`{{candidateFilename}}`、`{{candidatePath}}`、`{{candidateDomain}}` 与 `{{prompt}}` 占位符。
   - 调用示例（配合日志文件落盘）：
     ```bash
     ad run orchestrator.pipeline -- profile="skm" logFile="/var/log/knowledge-pipeline.log" dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"' timeout:=15 interval:=10
@@ -47,31 +65,31 @@
   - 使用 `only` 参数聚焦单个或指定仓库列表。
   - 调用示例：
     ```bash
-    ad run orchestrator.pipeline -- profile="skm" only="order-service" dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
+    ad run orchestrator.pipeline -- profile="skm" only="order-service" dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"'
     ```
 - 跳过系统知识库聚合：
   - 使用 `skipSystemKnowledge` 参数仅执行单仓巡检阶段。
   - 调用示例：
     ```bash
-    ad run orchestrator.pipeline -- profile="skm" skipSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
+    ad run orchestrator.pipeline -- profile="skm" skipSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"'
     ```
 - 强制全量维护系统知识库：
   - 使用 `forceSystemKnowledge` 参数在代码仓无变更时强制唤醒智能体执行系统知识库跨仓反查与主流程编排。
   - 调用示例：
     ```bash
-    ad run orchestrator.pipeline -- profile="skm" forceSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
+    ad run orchestrator.pipeline -- profile="skm" forceSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"'
     ```
 - 主动探测并同步系统知识库远端提交：
   - 使用 `syncSystemKnowledge` 参数在前序无更新时主动拉取远端源分支以探测外部新提交并对齐检查点。
   - 调用示例：
     ```bash
-    ad run orchestrator.pipeline -- profile="skm" syncSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
+    ad run orchestrator.pipeline -- profile="skm" syncSystemKnowledge:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"'
     ```
 - 跳过待审池消费：
   - 使用 `skipInbox` 参数跳过待审池候选文档消费阶段。
   - 调用示例：
     ```bash
-    ad run orchestrator.pipeline -- profile="skm" skipInbox:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}"'
+    ad run orchestrator.pipeline -- profile="skm" skipInbox:=true dispatchCmd='ad run my-agent.dispatch --profile skm -- repo="{{repo}}" prompt="{{prompt}}"'
     ```
 
 ## 实时执行日志观测与流式追踪

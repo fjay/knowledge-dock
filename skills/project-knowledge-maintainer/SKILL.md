@@ -1,6 +1,6 @@
 ---
 name: project-knowledge-maintainer
-description: 单仓与系统知识库微观维护与建库技能。当用户需要为新项目从源码初始化全盘建库、根据代码改动同步更新具体单仓文档、审核并合并待审池候选文档，或被流水线唤醒执行单仓闭环维护时激活此技能。多仓批量跑批调度、一线排障提单或普通业务编码时不激活。
+description: 单仓与系统知识库微观维护与建库技能。当用户需要为新项目从源码初始化全盘建库、根据代码改动同步更新具体单仓文档、从当前源码补齐既有知识遗漏、审核并合并待审池候选文档，或被流水线唤醒执行单仓闭环维护时激活此技能。多仓批量跑批调度、一线排障提单或普通业务编码时不激活。
 metadata:
   version: "8.0.0"
 ---
@@ -23,6 +23,14 @@ metadata:
 | **模式四：存量全盘建库与初始化** | 仓库首次接入知识库（`initialInventoryRequired: true`）或用户要求全盘重建 | 仓库源码与历史资料 | - 广度发现与类别分工（支持子代理委派）<br>- 系统知识库遵循三步法建立业务领域映射<br>- 六大单数类别目录必须全部补齐实质文档<br>- 产出根目录 `index.md` 与 `overview.md`<br>- 运行 links.verify 确保全库零死链 | [coverage.md](references/coverage.md)<br>[layout.md](references/layout.md)<br>[cross-repository.md](references/cross-repository.md)<br>[quality.md](references/quality.md) |
 
 ---
+
+## 源码覆盖补齐（backfill）
+
+接到 `mode="backfill"` 任务时，按 [maintenance.md](references/maintenance.md) 的补齐规程执行。补齐优先于无代码变更跳过及已有文档 `scope` 门槛：即使检查点已对齐，也同步并核验；系统仓不走仅同步免 AI 分支，不消费 Inbox。
+
+从当前源码真实入口、注册表、公共导出与测试发现主题，不局限 Git diff 或已有 scope；对照文档补充首次遗漏的流程、分支、契约、规则和恢复路径。保留人工内容及既有有效知识，不按篇数凑数、不全量重写；初始化的类别篇数要求不能作为补齐指标。单仓只写本仓 `docs/knowledge/`，系统仓只写目标系统仓，其他仓可只读核验。
+
+结束时调用 `maintenance.complete` 产生新的 `checkpointUpdatedAt` 本次完成记录，旧同 commit 不能提前结束。单仓需回传主题 `summary` 与 `knowledgeChanges` 文档清单（每项 `path`、`summary`，无改动显式空数组）；调度器自动交给系统代理定向聚合，`only` 不切断联动，显式 `skipSystemKnowledge` 才跳过。系统代理只围绕本次成功单仓的主题更新相关领域，不全景重扫；仅系统仓独立补齐才执行全景规程。这不是自动完整性验收器，不保证全仓知识完整。
 
 ## 核心工具箱速查
 
@@ -115,7 +123,7 @@ metadata:
 
 - 模式一（人工更新与开发后局部同步）：读 [maintenance.md](references/maintenance.md) 的“更新门槛”与“开发后的局部同步”。按范围门槛与失效四问精准核对，小修改不扩展为全仓重建。
 - 模式二（审核消费 Inbox 候选）：读 [inbox-review.md](references/inbox-review.md)。逐篇查源码消歧、去重与合入，调用 `knowledge.archive` 归档。
-- 模式三（自动化代码维护或定时核验）：读 [maintenance.md](references/maintenance.md) 的“自动化定时维护与 Checkpoint 推进”。严守更新门槛与失效四问，推进 Checkpoint。
+- 模式三（自动化代码维护或定时核验）：读 [maintenance.md](references/maintenance.md) 的“自动化定时维护与 Checkpoint 推进”。增量模式遵循更新门槛与失效四问；`backfill` 先按补齐规程从源码发现主题，不受无变更或已有 scope 限制，完成后推进 Checkpoint。
 - 模式四（新建、重建或补查遗漏）：读 [coverage.md](references/coverage.md) 与 [layout.md](references/layout.md)。先广度发现，再按类别分工深入，最后反向补漏；系统知识库建库时按 [cross-repository.md](references/cross-repository.md) 遵循业务领域识别与仓库归属三步法建立映射；产出按统一布局落位。
 - 初次写文档或元数据：读 [metadata.md](references/metadata.md)，再按需读下表模板。
 - 跨仓关系与系统知识库：另读 [cross-repository.md](references/cross-repository.md)，掌握业务领域识别与仓库归属三步法、工作区拓扑、绝对路径跨仓探索与证据边界。
@@ -179,7 +187,8 @@ docs/knowledge/
 
 主 Agent 是决策与编排中枢：拆解目标、决定委派粒度、验收结果与最终取舍。宿主支持子代理时，执行性工作尽量委派，不把任何环节写死为"必须亲自做"：
 
-- 初始化、重建或全量补齐按类别强制委派：六个类别目录各由一个子代理产出该目录全部文档，不得以"内容不多"为由合并或跳过类别。
+- 初始化、重建按类别强制委派：六个类别目录各由一个子代理产出该目录全部文档，不得以"内容不多"为由合并或跳过类别。
+- 全量补齐同样按类别委派覆盖核验与缺口补充；已覆盖部分只核验，不要求重写或新增文档。
 - 项目较大时，广度发现同样拆给多个子代理（按模块或入口类型）并行执行，主 Agent 汇总候选清单后规划选题。
 - `index.md` 与 `overview.md` 可由子代理依据已完成文档起草、主 Agent 审核定稿，也可由主 Agent 直接撰写，按项目规模自行决定。
 
@@ -189,7 +198,7 @@ docs/knowledge/
 
 ## 更新与完成
 
-在开发任务包含知识维护或代码自动化检查时，先按 [maintenance.md](references/maintenance.md) 的**更新门槛**判断是否需要同步——锚点是已写知识是否失效，不是改动量；通过门槛才更新受影响的流程、契约和导航，判定不更新同样要在给用户的完成回复中留痕（对话内容，不写入文件）。
+`backfill` 先按补齐规程从源码发现主题，再对照文档补缺，不适用下述增量范围门槛。其他开发任务包含知识维护或代码自动化检查时，先按 [maintenance.md](references/maintenance.md) 的**更新门槛**判断是否需要同步——锚点是已写知识是否失效，不是改动量；通过门槛才更新受影响的流程、契约和导航，判定不更新同样要在给用户的完成回复中留痕（对话内容，不写入文件）。
 
 在自动化维护循环中，审查完毕必须调用 `maintenance.complete` 推进 Checkpoint，确保已检查 commit 水位持久化。
 

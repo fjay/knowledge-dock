@@ -6,6 +6,7 @@ import type { MarkdownReportData } from "../types.ts";
  */
 export function generateMarkdownReport(reportData: MarkdownReportData = {}): string {
   const {
+    mode = "incremental",
     profile = "skm",
     total = 0,
     completed = 0,
@@ -25,6 +26,7 @@ export function generateMarkdownReport(reportData: MarkdownReportData = {}): str
   const totalDurationStr = formatDuration(totalElapsedMs);
 
   let md = `# 知识维护流水线执行报告\n\n`;
+  md += `- 维护模式：${mode === "backfill" ? "知识覆盖补齐" : "代码增量维护"}\n`;
   md += `- 执行环境配置：${profile}\n`;
   md += `- 扫描总仓库数：${total}\n`;
   md += `- 维护成功数：${completed}\n`;
@@ -63,6 +65,12 @@ export function generateMarkdownReport(reportData: MarkdownReportData = {}): str
       md += `  - 耗时：${durationStr}\n`;
       if (r.message) {
         md += `  - 说明：${r.message}\n`;
+      }
+      if (r.checkpointSummary) md += `  - 本次主题摘要：${r.checkpointSummary}\n`;
+      if (r.knowledgeChanges) {
+        for (const change of r.knowledgeChanges) {
+          md += `  - 知识变更：${change.path}：${change.summary}\n`;
+        }
       }
     }
   }

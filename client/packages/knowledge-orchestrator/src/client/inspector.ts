@@ -4,7 +4,7 @@
 export function isRepoCompleted(
   statusResult: any,
   targetCommit?: string | null,
-  options: { dispatchedAt?: number } = {}
+  options: { dispatchedAt?: number; requireFreshCheckpoint?: boolean } = {}
 ): boolean {
   if (!statusResult) return false;
   const data = statusResult.data || statusResult;
@@ -32,6 +32,9 @@ export function isRepoCompleted(
       return false;
     }
   }
+
+  // 补齐允许在同一提交上再次运行，缺失或无效的时间戳不能用旧水位兜底。
+  if (options.requireFreshCheckpoint) return false;
 
   // 2. 检查 targetCommit 是否与当前水位对齐
   if (targetCommit) {

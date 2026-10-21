@@ -1,4 +1,13 @@
+export type MaintenanceMode = "incremental" | "backfill";
+export type SystemKnowledgeScope = "related" | "full";
+
+export interface KnowledgeChange {
+  path: string;
+  summary: string;
+}
+
 export interface PipelineOptions {
+  mode?: MaintenanceMode;
   profile?: string;
   dispatchCmd?: string;
   timeout?: number;
@@ -22,10 +31,12 @@ export interface DryRunItem {
 }
 
 export interface DryRunResult {
+  mode: MaintenanceMode;
   dryRun: true;
   total: number;
   skipped: number;
   pending: number;
+  failed: number;
   dryRunOutput: DryRunItem[];
   inboxTotal?: number;
   inboxCompleted?: number;
@@ -63,6 +74,9 @@ export interface RepoResult {
   targetCommit?: string;
   durationMs: number;
   message: string;
+  actionTaken?: string;
+  checkpointSummary?: string;
+  knowledgeChanges?: KnowledgeChange[];
 }
 
 export interface InboxCandidate {
@@ -98,6 +112,7 @@ export interface InboxPhaseSummary {
 }
 
 export interface PipelineSummary {
+  mode: MaintenanceMode;
   profile: string;
   total: number;
   completed: number;
@@ -147,6 +162,7 @@ export interface DashboardStats {
 }
 
 export interface MarkdownReportData {
+  mode?: MaintenanceMode;
   profile?: string;
   total?: number;
   completed?: number;

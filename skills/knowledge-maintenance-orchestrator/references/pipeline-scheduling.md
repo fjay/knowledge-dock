@@ -16,7 +16,7 @@
 
 ## 三阶段依赖拓扑顺序
 
-流水线调度器严格遵循三阶段拓扑先后次序执行，确保事实依据完备：
+默认 `mode="incremental"`，流水线调度器严格遵循三阶段拓扑先后次序执行，确保事实依据完备；`backfill` 的优先规则见下一节：
 
 - 第一阶段（单代码仓巡检）：
   - 依次遍历各个业务代码仓，驱动分支同步、增量核验与知识维护。
@@ -33,6 +33,23 @@
   - 若待审池为空或指定跳过，自动跳过消费阶段。
 
 ---
+
+## 源码覆盖补齐模式与优先级
+
+`mode` 枚举为 `incremental`（默认）与 `backfill`。补齐模式复用 `only="repo-a,repo-b"`，仓库名精确匹配，忽略大小写和前后空白；不提供 `only` 则处理所有代码仓和系统知识仓。`only` 未命中或含不能处理的仓库时报错，错误仓仍判失败，避免静默漏执行。`skipSystemKnowledge` 仍有效。
+
+`backfill` 高于无变更跳过与已有文档 `scope` 门槛。`only` 只限定单仓补齐目标，不切断后续系统聚合：单仓成功后自动纳入受管系统仓，交接本次文档清单与主题，执行 `systemScope="related"` 定向聚合，不重扫无关领域。仅指定系统仓、没有代码仓任务时执行 `systemScope="full"` 全景补齐。系统仓不走仅同步免 AI 分支，始终跳过 Inbox。
+
+显式 `skipSystemKnowledge:=true` 才仅补单仓；未配置系统仓且未跳过时提前报错。全部代码仓失败时跳过定向聚合，部分成功只交接成功仓。单仓 `maintenance.complete` 需提供主题 `summary` 和 `knowledgeChanges` 数组（每项 `path` 与 `summary`）；无改动传空数组，未回传不能视为无改动。调度器仅使用本次新完成记录的 `checkpointSummary` 和清单，不复用旧水位的摘要；预演只预告目标仓和知识目录，实际交接在单仓完成后生成。
+
+智能体从当前源码真实入口、注册表、公共导出及测试发现主题，不局限 Git diff 或已有 scope；对照文档补充首次遗漏的流程、分支、契约、规则、恢复路径。保留人工内容及既有有效知识，不按篇数凑数、不全量重写。单仓只写本仓 `docs/knowledge/`，系统仓只写目标系统仓，其他仓可只读核验。补齐完成必须观察到新的 `checkpointUpdatedAt` 本次完成记录，旧同 commit 检查点不能提前结束任务。这不是自动完整性验收器，不保证全仓知识完整。
+
+多仓补齐预演（正式运行去掉 `dryRun:=true`）：
+
+```bash
+ad run orchestrator.pipeline -- profile="skm" mode="backfill" only="repo-a,repo-b" dryRun:=true \
+  dispatchCmd='ad run my-agent.dispatch -- repo="{{repo}}" prompt="{{prompt}}"'
+```
 
 ## 本地执行机边界铁律（核心约束）
 
@@ -66,6 +83,8 @@ ad playbook show orchestrator/scheduled-maintenance
 
 在派发模版 `dispatchCmd` 中支持使用以下占位符（执行时会自动执行安全引号转义，防止命令注入破裂）：
 
+- `{{mode}}`：维护模式（`incremental` 或 `backfill`）。
+- `{{systemScope}}`：系统层范围（`related` 为本次单仓交接的定向聚合，`full` 为全景任务）。
 - `{{repo}}`：目标仓库标识或名称（如 `order-service` 或 `system-knowledge`）。
 - `{{path}}`：远端工作区绝对路径（如 `/srv/workspace/order-service`）。
 - `{{branch}}`：目标分支名（代码仓默认为 `release`，系统知识仓默认为 `master`）。
@@ -76,7 +95,7 @@ ad playbook show orchestrator/scheduled-maintenance
 - `{{changedFilesCount}}`：变动文件总数。
 - `{{diffSummary}}`：文件变动统计摘要文本。
 - `{{commitsSummary}}`：格式化的提交日志摘要文本。
-- `{{codePhaseSummary}}`：前序已完成巡检的代码仓摘要与变更清单（在第二阶段自动注入系统知识库）。
+- `{{codePhaseSummary}}`：本次成功单仓的绝对路径、知识目录、处置、主题摘要及逐篇文档变更；未回传清单会明确标记，不等同于空清单。在第二阶段自动注入系统知识库。
 - `{{candidateId}}`：待审候选文档全局唯一标识符（如 `20260927-a1b2c3d4`）。
 - `{{candidateTitle}}`：待审候选文档标题。
 - `{{candidateFilename}}`：待审候选文档文件名。
@@ -94,7 +113,8 @@ ad playbook show orchestrator/scheduled-maintenance
   - 仅扫描远端变更并渲染各仓派发命令，不实际触发执行与检查点轮询。
   - 调用命令：
     ```bash
-    ad run orchestrator.pipeline -- profile="skm" dryRun:=true
+    ad run orchestrator.pipeline -- profile="skm" dryRun:=true \
+      dispatchCmd='ad run my-agent.dispatch -- repo="{{repo}}" prompt="{{prompt}}"'
     ```
 - 正式生产执行（配置日志落盘）：
   - 配置外部智能体派发模版，启动异步轮询与三阶段闭环驱动。

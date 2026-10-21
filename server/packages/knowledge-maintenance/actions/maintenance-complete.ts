@@ -3,6 +3,7 @@ import type { ActionInput, ActionOutput } from "../.actiondock/generated/actions
 import { GitClient } from "../src/git.ts";
 import { resolveRepoPath, getRepoIdentifier } from "../src/repo-utils.ts";
 import { MaintenanceError } from "../src/errors.ts";
+import { validateKnowledgeChanges } from "../src/checkpoint-metadata.ts";
 
 export type Input = ActionInput<"maintenance.complete">;
 export type Output = ActionOutput<"maintenance.complete">;
@@ -27,6 +28,10 @@ export default defineAction<Input, Output>(async (input, ctx) => {
       400
     );
   }
+
+  const metadata = input.knowledgeChanges === undefined
+    ? {}
+    : { knowledgeChanges: validateKnowledgeChanges(input.knowledgeChanges) };
 
   const timeoutMs = ctx.config.get<number>("GIT_TIMEOUT_MS", 30000);
   const maxOutputBytes = ctx.config.get<number>("GIT_MAX_OUTPUT_BYTES", 4 * 1024 * 1024);
@@ -60,6 +65,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     commit: fullCommit,
     actionTaken,
     summary,
+    ...metadata,
     updatedAt,
     repo: repoName,
     path: resolvedPath,
@@ -82,6 +88,7 @@ export default defineAction<Input, Output>(async (input, ctx) => {
     currentCommit: fullCommit,
     actionTaken,
     summary,
+    ...metadata,
     updatedAt,
   };
 });
