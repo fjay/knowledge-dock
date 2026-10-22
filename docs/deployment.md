@@ -41,8 +41,8 @@
   "views": {
     "sk": {
       "token": "${ACTIONDOCK_TOKEN}",
-      "packageAllowlist": ["workspace", "knowledge"],
-      "actionAllowlist": ["search.rg", "files.read"]
+      "packageAllowlist": [],
+      "actionAllowlist": ["workspace/search.rg", "workspace/files.read"]
     },
     "skm": {
       "token": "${ACTIONDOCK_AGENT_TOKEN}",
@@ -56,7 +56,7 @@
 }
 ```
 
-扩展新视图或新权限面的做法：复制 `server/config/views.json.example` 为 `server/config/views.json`，按需修改。挂载配置是整体替换语义，同名视图覆盖内置默认，因此自定义 `sk` 时需完整列出允许的 action 清单。`token` 支持 `${ENV_VAR}` 环境变量引用，令牌不落盘；新增环境变量（如 `OPS_TOKEN`）在 `.env` 中声明并在 Compose `environment` 段透传。`$` 与 `__` 前缀的键视为注释，解析时剔除。
+扩展新视图或新权限面的做法：复制 `server/config/views.json.example` 为 `server/config/views.json`，按需修改。挂载配置是整体替换语义，同名视图覆盖内置默认，因此自定义 `sk` 时需完整列出允许的 action 清单。`actionAllowlist` 必须使用全限定 `packageId/actionId` 引用（2.20.0 起启动时强校验，短名引用直接阻断）；且 2.20.0 起整包授权与单动作授权取并集，收窄型视图（如 `sk`）不得同时配置 `packageAllowlist`，否则整包内全部动作会被放大授权。`token` 支持 `${ENV_VAR}` 环境变量引用，令牌不落盘；新增环境变量（如 `OPS_TOKEN`）在 `.env` 中声明并在 Compose `environment` 段透传。`$` 与 `__` 前缀的键视为注释，解析时剔除。
 
 解析失败（JSON 语法错误、令牌引用的环境变量未设置、令牌不足 32 字符、疑似占位符或跨视图重复、无任何携带令牌的视图）时容器启动即失败，不静默降级。`ACTIONDOCK_TOKEN` 环境变量在启动前被显式清除，仅作为 `sk` 视图令牌的注入来源，不会成为 `default` 视图的回落令牌。`SK_ACTION_ALLOWLIST` 环境变量仅在内置默认模式下生效，挂载配置后不再读取。
 

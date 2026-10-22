@@ -17,7 +17,8 @@
     "logs": "docker compose logs -f",
     "restart": "docker compose restart",
     "shell": "docker exec -it knowledge-server bash",
-    "test": "npm run test --workspaces --if-present",
+    "test:views": "node server/tests/views-config.test.mjs",
+    "test": "npm run test:views && npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "keywords": [

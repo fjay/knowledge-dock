@@ -29,7 +29,10 @@ const PLACEHOLDER_PATTERNS = [
 
 const VIEW_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-// 内置默认 sk 视图 action 白名单（与 Dockerfile ENV SK_ACTION_ALLOWLIST 一致）
+// 内置默认 sk 视图 action 白名单（与 Dockerfile ENV SK_ACTION_ALLOWLIST 一致）。
+// 要求全限定 packageId/actionId 引用，且 sk 视图不携带 packageAllowlist：
+// ActionDock 2.20.0 起整包授权与单动作授权取并集，若同时保留 packageAllowlist，
+// workspace 包的 files.write / bash.exec 等高危动作会被整包授权放大进查询视图
 const BUILTIN_SK_ACTION_ALLOWLIST = [
   "workspace/search.rg",
   "workspace/files.read",
@@ -38,15 +41,7 @@ const BUILTIN_SK_ACTION_ALLOWLIST = [
   "knowledge/knowledge.get",
   "knowledge/knowledge.query",
   "knowledge/knowledge.leaderboard",
-  "search.rg",
-  "files.read",
-  "files.list",
-  "knowledge.collect",
-  "knowledge.get",
-  "knowledge.query",
-  "knowledge.leaderboard",
 ];
-
 function fail(message) {
   console.error("[VIEWS ERROR] " + message);
   process.exit(1);
@@ -162,7 +157,8 @@ if (mountedPath && fs.existsSync(mountedPath)) {
 
   views.sk = {
     token: process.env.ACTIONDOCK_TOKEN,
-    packageAllowlist: ["workspace", "knowledge"],
+    // 整包授权在 2.20.0 并集语义下会放大 sk 视图权限，必须置空，仅靠全限定 action 白名单收窄
+    packageAllowlist: [],
     actionAllowlist: skAllowlist,
   };
   views.skm = {

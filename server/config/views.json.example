@@ -5,9 +5,9 @@
       "$comment": "default 视图不配置 token 时自动注入随机令牌，等效于关闭"
     },
     "sk": {
-      "$comment": "查询视图：token 支持 ${ENV_VAR} 环境变量引用，令牌不落盘；allowlist 为整体替换语义，需完整列出",
+      "$comment": "查询视图：token 支持 ${ENV_VAR} 环境变量引用，令牌不落盘；allowlist 为整体替换语义，需完整列出。注意：ActionDock 2.20.0 起整包授权与单动作授权取并集，sk 不得配置 packageAllowlist，只靠全限定 action 白名单收窄，否则 files.write / bash.exec 等高危动作会被整包授权放大",
       "token": "${ACTIONDOCK_TOKEN}",
-      "packageAllowlist": ["workspace", "knowledge"],
+      "packageAllowlist": [],
       "actionAllowlist": [
         "workspace/search.rg",
         "workspace/files.read",
@@ -15,14 +15,7 @@
         "knowledge/knowledge.collect",
         "knowledge/knowledge.get",
         "knowledge/knowledge.query",
-        "knowledge/knowledge.leaderboard",
-        "search.rg",
-        "files.read",
-        "files.list",
-        "knowledge.collect",
-        "knowledge.get",
-        "knowledge.query",
-        "knowledge.leaderboard"
+        "knowledge/knowledge.leaderboard"
       ]
     },
     "skm": {
