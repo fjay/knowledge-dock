@@ -4,7 +4,7 @@ import { defaultExec } from "./client/runner.ts";
 import { queryRemoteList } from "./client/remote.ts";
 import { renderTemplate } from "./template/engine.ts";
 import { buildPlaceholders } from "./template/placeholders.ts";
-import { formatDuration } from "./ui/format.ts";
+import { formatDuration, formatLogTimestamp } from "./ui/format.ts";
 import { generateMarkdownReport } from "./report/markdown.ts";
 import { runCodePhase } from "./phases/code-phase.ts";
 import { runSystemKnowledgePhase } from "./phases/system-phase.ts";
@@ -72,7 +72,7 @@ export async function runPipeline(
     }
     if (options.logFile) {
       try {
-        const ts = new Date(nowFn()).toISOString().replace("T", " ").replace(/\..+/, "");
+        const ts = formatLogTimestamp(nowFn());
         fs.appendFileSync(options.logFile, `[${ts}] ${msg}\n`, "utf8");
       } catch {
         // 容错处理

@@ -20,3 +20,18 @@ export function renderProgressBar(current: number = 0, total: number = 0, width:
   const percent = Math.round(ratio * 100);
   return `[${bar}] ${percent}% (${current}/${total})`;
 }
+
+/**
+ * 格式化日志时间戳（本地时间 + 数字时区偏移，如 2026-10-20 17:01:17 +08:00）
+ */
+export function formatLogTimestamp(ms: number = Date.now()): string {
+  const date = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const local = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ` +
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  const offsetMinutes = date.getTimezoneOffset();
+  const sign = offsetMinutes <= 0 ? "+" : "-";
+  const absOffset = Math.abs(offsetMinutes);
+  const offset = `${sign}${pad(Math.floor(absOffset / 60))}:${pad(absOffset % 60)}`;
+  return `${local} ${offset}`;
+}
